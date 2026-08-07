@@ -1,0 +1,51 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #18160f;
+  --surface: #221f17;
+  --surface-2: #2a2620;
+  --ink: #ede6d3;
+  --kraft: #a79876;
+  --line: #3a362a;
+  --stamp-red: #e15c43;
+  --riso-pink: #f1679a;
+  --highlighter: #e3b94a;
+  --btn-on-ink: #18160f;
+}
+
+[data-theme="light"] {
+  --bg: #eae5d8;
+  --surface: #fffdf8;
+  --surface-2: #f3eee3;
+  --ink: #201f1c;
+  --kraft: #5c5748;
+  --line: #d8d0be;
+  --stamp-red: #c23b2e;
+  --riso-pink: #e0447c;
+  --highlighter: #f2c94c;
+  --btn-on-ink: #f3eee3;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-ink: var(--ink);
+  --color-kraft: var(--kraft);
+  --color-line: var(--line);
+  --color-stamp-red: var(--stamp-red);
+  --color-riso-pink: var(--riso-pink);
+  --color-highlighter: var(--highlighter);
+  --color-btn-on-ink: var(--btn-on-ink);
+  --font-display: var(--font-anton);
+  --font-accent: var(--font-special-elite);
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-plex-mono);
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans), sans-serif;
+  transition: background 0.15s ease, color 0.15s ease;
+}
