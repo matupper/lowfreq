@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>lowfreq — style guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Special+Elite&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #18160F;
+    --surface: #221F17;
+    --surface-2: #2A2620;
+    --ink: #EDE6D3;
+    --kraft: #A79876;
+    --line: #3A362A;
+    --stamp-red: #E15C43;
+    --riso-pink: #F1679A;
+    --highlighter: #E3B94A;
+    --btn-on-ink: #18160F;
+  }
+  html[data-theme="light"] {
+    --bg: #EAE5D8;
+    --surface: #FFFDF8;
+    --surface-2: #F3EEE3;
+    --ink: #201F1C;
+    --kraft: #5C5748;
+    --line: #D8D0BE;
+    --stamp-red: #C23B2E;
+    --riso-pink: #E0447C;
+    --highlighter: #F2C94C;
+    --btn-on-ink: #F3EEE3;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    font-family: 'Inter', sans-serif;
+    color: var(--ink);
+    line-height: 1.6;
+    transition: background 0.2s, color 0.2s;
+  }
+  .page { max-width: 900px; margin: 0 auto; padding: 40px 32px 120px; }
+
+  .theme-toggle {
+    position: sticky; top: 16px; float: right;
+    display: flex; align-items: center; gap: 8px;
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 20px; padding: 6px 14px; cursor: pointer;
+    font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--kraft);
+  }
+
+  .cover { padding: 60px 0 56px; border-bottom: 2px solid var(--ink); margin-bottom: 56px; clear: both; }
+  .cover .eyebrow { font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--kraft); letter-spacing: 1px; text-transform: uppercase; }
+  .cover h1 { font-family: 'Anton', sans-serif; font-weight: 400; font-size: 64px; margin: 12px 0 8px; line-height: 0.95; letter-spacing: 0.5px; }
+  .cover p { font-size: 16px; color: var(--kraft); max-width: 540px; margin: 0; }
+
+  section { margin-bottom: 64px; }
+  .section-label { font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--stamp-red); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+  h2 { font-family: 'Anton', sans-serif; font-weight: 400; font-size: 30px; margin: 0 0 8px; letter-spacing: 0.3px; }
+  .section-intro { color: var(--kraft); font-size: 14.5px; max-width: 620px; margin-bottom: 28px; }
+
+  .concept-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .concept-card { background: var(--surface); border: 1px solid var(--line); border-radius: 3px; padding: 20px; }
+  .concept-card.avoid { opacity: 0.75; }
+  .concept-card .tag { font-family: 'IBM Plex Mono', monospace; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; padding: 3px 8px; border-radius: 2px; display: inline-block; margin-bottom: 10px; }
+  .concept-card.embrace .tag { background: #2A3B1E; color: #97C459; }
+  .concept-card.avoid .tag { background: #3A2020; color: #F09595; }
+  html[data-theme="light"] .concept-card.embrace .tag { background: #E9F0E0; color: #3B6D11; }
+  html[data-theme="light"] .concept-card.avoid .tag { background: #FBE5E5; color: #A32D2D; }
+  .concept-card h3 { font-size: 15px; margin: 0 0 6px; font-weight: 600; }
+  .concept-card p { font-size: 13px; color: var(--kraft); margin: 0; }
+
+  .swatch-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .swatch { border: 1px solid var(--line); border-radius: 3px; overflow: hidden; background: var(--surface); }
+  .swatch-fill { height: 84px; }
+  .swatch-info { padding: 12px 14px; }
+  .swatch-info .name { font-weight: 600; font-size: 13.5px; margin-bottom: 2px; }
+  .swatch-info .hex { font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--kraft); }
+  .swatch-info .usage { font-size: 12px; color: var(--kraft); margin-top: 6px; }
+
+  .type-sample { border-top: 1px solid var(--line); padding: 24px 0; display: grid; grid-template-columns: 150px 1fr; gap: 24px; align-items: baseline; }
+  .type-meta { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--kraft); line-height: 1.7; }
+  .type-meta .role { color: var(--ink); font-weight: 500; display: block; margin-bottom: 4px; }
+  .display-sample { font-family: 'Anton', sans-serif; font-size: 38px; line-height: 1; letter-spacing: 0.3px; }
+  .accent-sample { font-family: 'Special Elite', monospace; font-size: 20px; color: var(--stamp-red); }
+  .body-sample { font-family: 'Inter', sans-serif; font-size: 15px; color: var(--kraft); }
+  .mono-sample { font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: var(--kraft); }
+
+  .rule-list { list-style: none; padding: 0; margin: 0; }
+  .rule-list li { display: grid; grid-template-columns: 24px 1fr; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .rule-list li:last-child { border-bottom: none; }
+  .rule-list .mark { font-family: 'IBM Plex Mono', monospace; font-weight: 500; }
+  .rule-list .yes .mark { color: #97C459; }
+  .rule-list .no .mark { color: #F09595; }
+  html[data-theme="light"] .rule-list .yes .mark { color: #3B6D11; }
+  html[data-theme="light"] .rule-list .no .mark { color: #A32D2D; }
+
+  .component-row { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; padding: 24px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 4px; margin-bottom: 16px; }
+  .btn-primary { background: var(--ink); color: var(--btn-on-ink); border: none; border-radius: 2px; padding: 12px 20px; font-size: 13px; font-weight: 500; font-family: 'Inter', sans-serif; }
+  .btn-secondary { background: transparent; color: var(--ink); border: 1px solid var(--ink); border-radius: 2px; padding: 12px 20px; font-size: 13px; font-weight: 500; font-family: 'Inter', sans-serif; }
+  .badge-stamp { display: inline-flex; align-items: center; gap: 6px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--kraft); border: 1px solid var(--riso-pink); border-radius: 20px; padding: 4px 12px 4px 8px; }
+  .badge-stamp .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--riso-pink); }
+  .flyer-card { background: var(--surface); border: 1px solid var(--ink); border-radius: 2px; padding: 16px; width: 230px; transform: rotate(-0.6deg); }
+  .flyer-card .title { font-family: 'Anton', sans-serif; font-weight: 400; font-size: 20px; letter-spacing: 0.3px; line-height: 1.05; }
+  .flyer-card .meta { font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: var(--kraft); margin-top: 6px; }
+  .tag-highlight { background: var(--highlighter); color: #412402; font-family: 'IBM Plex Mono', monospace; font-size: 10px; padding: 3px 8px; border-radius: 2px; display: inline-block; }
+  html[data-theme="light"] .tag-highlight { color: #412402; }
+
+  .spacing-row { display: flex; align-items: center; gap: 16px; padding: 10px 0; border-bottom: 1px solid var(--line); font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--kraft); }
+  .spacing-bar { background: var(--riso-pink); height: 10px; }
+
+  footer { border-top: 2px solid var(--ink); padding-top: 20px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--kraft); }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="theme-toggle" onclick="toggleTheme()"><span id="theme-label">dark &middot; default</span> &middot; tap to preview light</div>
+
+  <div class="cover">
+    <div class="eyebrow">visual style guide — v0.2, working draft</div>
+    <h1>LOWFREQ</h1>
+    <p>An invite-only guide to the local underground music scene. Dark by default &mdash; built for browsing at night, at shows, in the dark. The visual language borrows from show flyers, xeroxed zines, and hand-stamped entry, not early-internet nostalgia.</p>
+  </div>
+
+  <section>
+    <div class="section-label">concept</div>
+    <h2>Where this comes from</h2>
+    <p class="section-intro">The reference point is physical show ephemera &mdash; flyers stapled to poles, riso-printed zine covers, wrist stamps at the door &mdash; not 2003-era web design. This keeps the nostalgia authentic to the subculture and keeps the UI from aging into a dated trend.</p>
+    <div class="concept-grid">
+      <div class="concept-card embrace">
+        <span class="tag">embrace</span>
+        <h3>Paper, ink, stamps</h3>
+        <p>Flat matte surfaces, hairline and dashed rules, ink-stamp motifs for verification moments, slight imperfection (rotation, uneven borders) used sparingly.</p>
+      </div>
+      <div class="concept-card avoid">
+        <span class="tag">avoid</span>
+        <h3>Literal early-web</h3>
+        <p>No tiled backgrounds, blinking text, comic sans, gradients, glitter cursors, or skeuomorphic browser chrome. Reads as costume, not culture.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-label">01 — color</div>
+    <h2>Palette (dark, primary)</h2>
+    <p class="section-intro">Dark is the primary experience &mdash; a warm near-black instead of true black, so it still reads as "paper in low light" rather than a generic dark-mode app. Toggle above to preview the light alternate, which the same tokens flip to automatically.</p>
+    <div class="swatch-grid">
+      <div class="swatch"><div class="swatch-fill" style="background:var(--bg)"></div><div class="swatch-info"><div class="name">Background</div><div class="hex" id="hex-bg">#18160F</div><div class="usage">Page canvas</div></div></div>
+      <div class="swatch"><div class="swatch-fill" style="background:var(--surface); border-bottom:1px solid var(--line)"></div><div class="swatch-info"><div class="name">Surface</div><div class="hex" id="hex-surface">#221F17</div><div class="usage">Cards, elevated panels</div></div></div>
+      <div class="swatch"><div class="swatch-fill" style="background:var(--ink)"></div><div class="swatch-info"><div class="name">Ink</div><div class="hex" id="hex-ink">#EDE6D3</div><div class="usage">Primary text, buttons</div></div></div>
+      <div class="swatch"><div class="swatch-fill" style="background:var(--kraft)"></div><div class="swatch-info"><div class="name">Kraft</div><div class="hex" id="hex-kraft">#A79876</div><div class="usage">Secondary text, muted borders</div></div></div>
+      <div class="swatch"><div class="swatch-fill" style="background:var(--stamp-red)"></div><div class="swatch-info"><div class="name">Stamp red</div><div class="hex" id="hex-red">#E15C43</div><div class="usage">Verification, urgency &mdash; use sparingly</div></div></div>
+      <div class="swatch"><div class="swatch-fill" style="background:var(--riso-pink)"></div><div class="swatch-info"><div class="name">Riso pink</div><div class="hex" id="hex-pink">#F1679A</div><div class="usage">Interactive accent &mdash; saves, links, active states</div></div></div>
+      <div class="swatch"><div class="swatch-fill" style="background:var(--highlighter)"></div><div class="swatch-info"><div class="name">Highlighter</div><div class="hex" id="hex-yellow">#E3B94A</div><div class="usage">Tags and badges only</div></div></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-label">02 — type</div>
+    <h2>Typography</h2>
+    <p class="section-intro">Anton carries every headline and event title &mdash; condensed, blunt, unmistakably gig-poster. Special Elite is a secondary accent face, reserved for stamped/verification moments only, never for general headlines. Inter carries all body copy. IBM Plex Mono handles anything that reads like it's printed on a ticket stub.</p>
+
+    <div class="type-sample">
+      <div class="type-meta"><span class="role">Display</span>Anton, 400<br>Headlines, event titles</div>
+      <div class="display-sample">YOU'RE IN.</div>
+    </div>
+    <div class="type-sample">
+      <div class="type-meta"><span class="role">Accent (sparing)</span>Special Elite<br>Stamp/verification moments only</div>
+      <div class="accent-sample">verified &middot; aug 04</div>
+    </div>
+    <div class="type-sample">
+      <div class="type-meta"><span class="role">Body</span>Inter, 400&ndash;500<br>All UI copy, descriptions</div>
+      <div class="body-sample">No open registration &mdash; get invited by someone already inside, then scan their stamp in person to join the scene.</div>
+    </div>
+    <div class="type-sample">
+      <div class="type-meta"><span class="role">Mono</span>IBM Plex Mono<br>Metadata, timestamps, stubs</div>
+      <div class="mono-sample">the foxhole basement &middot; sat 9:00pm &middot; 42 going</div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-label">03 — motif rules</div>
+    <h2>How much "handmade" is too much</h2>
+    <p class="section-intro">Imperfection is the signature, but it has a budget. These rules keep it from tipping into gimmick.</p>
+    <ul class="rule-list">
+      <li class="yes"><span class="mark">yes</span><span>Rotate event/flyer cards -1&deg; to 1&deg;, never more. Never rotate buttons or body text.</span></li>
+      <li class="yes"><span class="mark">yes</span><span>Use dashed/perforated dividers for card and section breaks instead of hard rules.</span></li>
+      <li class="yes"><span class="mark">yes</span><span>Reserve the ink-stamp animation and Special Elite type for one moment: getting verified/invited in.</span></li>
+      <li class="no"><span class="mark">no</span><span>No hand-drawn or "wobbly" fonts for body text &mdash; readability wins over character there.</span></li>
+      <li class="no"><span class="mark">no</span><span>No more than one accent color per screen (pink OR red, rarely both together).</span></li>
+      <li class="no"><span class="mark">no</span><span>No pure black backgrounds in dark mode &mdash; always the warm near-black, never #000.</span></li>
+    </ul>
+  </section>
+
+  <section>
+    <div class="section-label">04 — components</div>
+    <h2>Core elements</h2>
+    <div class="component-row">
+      <button class="btn-primary">scan an invite stamp</button>
+      <button class="btn-secondary">save</button>
+      <span class="badge-stamp"><span class="dot"></span>verified aug 04</span>
+      <span class="tag-highlight">underground</span>
+    </div>
+    <div class="component-row">
+      <div class="flyer-card">
+        <div class="title">STATIC BLOOM<br>/ HEX GARDEN</div>
+        <div class="meta">the foxhole basement &middot; 9:00pm</div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-label">05 — spacing</div>
+    <h2>Scale</h2>
+    <p class="section-intro">4px base unit. Keep to this scale for margins, padding, and gaps &mdash; don't introduce arbitrary values.</p>
+    <div class="spacing-row"><span style="width:40px">4</span><div class="spacing-bar" style="width:4px"></div><span>micro &mdash; icon-to-label gaps</span></div>
+    <div class="spacing-row"><span style="width:40px">8</span><div class="spacing-bar" style="width:8px"></div><span>tight &mdash; inline element spacing</span></div>
+    <div class="spacing-row"><span style="width:40px">16</span><div class="spacing-bar" style="width:16px"></div><span>default &mdash; card padding, stack gaps</span></div>
+    <div class="spacing-row"><span style="width:40px">24</span><div class="spacing-bar" style="width:24px"></div><span>section &mdash; between distinct groups</span></div>
+    <div class="spacing-row"><span style="width:40px">40</span><div class="spacing-bar" style="width:40px"></div><span>screen &mdash; top-level screen padding</span></div>
+  </section>
+
+  <footer>
+    lowfreq &middot; visual style guide &middot; dark mode is the primary/default theme &mdash; light is a fully supported alternate, not an afterthought. Exact rotation and accent-color pairing values are still open to iteration.
+  </footer>
+
+</div>
+<script>
+function toggleTheme() {
+  const html = document.documentElement;
+  const isLight = html.getAttribute('data-theme') === 'light';
+  html.setAttribute('data-theme', isLight ? 'dark' : 'light');
+  document.getElementById('theme-label').textContent = isLight ? 'dark · default' : 'light · alternate';
+  const hexes = isLight
+    ? { bg:'#18160F', surface:'#221F17', ink:'#EDE6D3', kraft:'#A79876', red:'#E15C43', pink:'#F1679A', yellow:'#E3B94A' }
+    : { bg:'#EAE5D8', surface:'#FFFDF8', ink:'#201F1C', kraft:'#5C5748', red:'#C23B2E', pink:'#E0447C', yellow:'#F2C94C' };
+  document.getElementById('hex-bg').textContent = hexes.bg;
+  document.getElementById('hex-surface').textContent = hexes.surface;
+  document.getElementById('hex-ink').textContent = hexes.ink;
+  document.getElementById('hex-kraft').textContent = hexes.kraft;
+  document.getElementById('hex-red').textContent = hexes.red;
+  document.getElementById('hex-pink').textContent = hexes.pink;
+  document.getElementById('hex-yellow').textContent = hexes.yellow;
+}
+</script>
+</body>
+</html>
