@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import EventMap from "./EventMap";
 import type { EventWithVenue } from "./types";
@@ -29,6 +29,13 @@ type Props = {
 export default function EventsBrowser({ events, setRsvp, clearRsvp }: Props) {
   const [view, setView] = useState<"list" | "map">("list");
   const [focusedEventId, setFocusedEventId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (view !== "list" || !focusedEventId) return;
+    document
+      .getElementById(`event-${focusedEventId}`)
+      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [view, focusedEventId]);
 
   return (
     <main className="flex-1 flex flex-col max-w-md mx-auto w-full px-6 py-10 gap-8">
@@ -81,10 +88,11 @@ export default function EventsBrowser({ events, setRsvp, clearRsvp }: Props) {
       ) : (
         <ul className="flex flex-col gap-6">
           {events.map((event, i) => (
-            <li key={event.id}>
+            <li key={event.id} id={`event-${event.id}`}>
               <EventCard
                 event={event}
                 rotation={CARD_ROTATIONS[i % CARD_ROTATIONS.length]}
+                focused={event.id === focusedEventId}
                 setRsvp={setRsvp}
                 clearRsvp={clearRsvp}
               />
@@ -99,11 +107,13 @@ export default function EventsBrowser({ events, setRsvp, clearRsvp }: Props) {
 function EventCard({
   event,
   rotation,
+  focused,
   setRsvp,
   clearRsvp,
 }: {
   event: EventWithVenue;
   rotation: string;
+  focused: boolean;
   setRsvp: (formData: FormData) => void;
   clearRsvp: (formData: FormData) => void;
 }) {
@@ -111,7 +121,9 @@ function EventCard({
 
   return (
     <div
-      className={`bg-surface border border-ink rounded-[2px] p-5 ${rotation}`}
+      className={`bg-surface border border-ink rounded-[2px] p-5 ${rotation} ${
+        focused ? "ring-2 ring-riso-pink" : ""
+      }`}
     >
       <h2 className="font-display text-2xl leading-tight tracking-wide">
         {event.title}
