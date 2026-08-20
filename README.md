@@ -60,11 +60,10 @@ keep it as your design reference.
 ## Roadmap
 
 - [x] Project scaffold, design tokens, dark mode
-- [ ] Supabase auth wired to the `users` table
+- [x] Supabase auth wired to the `users` table
+- [x] Event browse (list/map) + RSVP
 - [ ] Invite creation + QR generation for existing users
 - [ ] Invite scanning + registration flow
-- [ ] Event map view (browse nearby shows)
-- [ ] Event detail + RSVP
 - [ ] Venue creation for venue owners
 - [ ] Phase 2: time-limited invites + location-verified scanning
 
