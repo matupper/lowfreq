@@ -61,7 +61,7 @@ export default function EventsBrowser({ events, setRsvp, clearRsvp }: Props) {
           SHOWS
         </h1>
         <p className="text-sm text-kraft leading-relaxed pt-2">
-          Upcoming, nearest first.
+          Upcoming, soonest first.
         </p>
       </div>
 
