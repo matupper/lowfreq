@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { signOut } from "./actions";
 
@@ -27,10 +28,16 @@ export default async function HomePage() {
           YOU&apos;RE IN.
         </h1>
         <p className="text-sm text-kraft leading-relaxed max-w-xs pt-4">
-          {claims.email} — founder account. Event browse and invite
-          creation are next.
+          {claims.email} — founder account. Invite creation is next.
         </p>
       </div>
+
+      <Link
+        href="/events"
+        className="bg-ink text-btn-on-ink rounded-[2px] py-3.5 text-sm font-medium text-center"
+      >
+        Browse shows
+      </Link>
     </main>
   );
 }

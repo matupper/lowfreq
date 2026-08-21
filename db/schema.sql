@@ -98,3 +98,28 @@ create policy "events are publicly readable" on events for select using (true);
 create policy "venues are publicly readable" on venues for select using (true);
 create policy "users can view their own rsvps" on rsvps for select using (auth.uid() = user_id);
 create policy "users can create their own rsvps" on rsvps for insert with check (auth.uid() = user_id);
+-- Needed so a user can change their mind (going -> interested) or cancel:
+-- an upsert on the (user_id, event_id) unique constraint issues an UPDATE
+-- on conflict, and cancelling issues a DELETE.
+create policy "users can update their own rsvps" on rsvps for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "users can delete their own rsvps" on rsvps for delete using (auth.uid() = user_id);
+
+-- ── RSVP counts (privacy-preserving) ─────────────────────────
+-- The rsvps select policy above is intentionally scoped to auth.uid() =
+-- user_id, so a plain client-side select can't read other users' RSVPs
+-- to compute "N going". This returns aggregate counts only — never which
+-- specific users RSVPed — via a security-definer function.
+create or replace function public.event_rsvp_counts(event_ids uuid[])
+returns table (event_id uuid, status text, count bigint)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select event_id, status, count(*)
+  from rsvps
+  where event_id = any(event_ids)
+  group by event_id, status;
+$$;
+
+grant execute on function public.event_rsvp_counts(uuid[]) to authenticated, anon;
