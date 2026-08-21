@@ -11,16 +11,14 @@ function isRsvpStatus(value: FormDataEntryValue | null): value is RsvpStatus {
   return typeof value === "string" && RSVP_STATUSES.includes(value as RsvpStatus);
 }
 
-export async function setRsvp(formData: FormData) {
+export async function setRsvp(eventId: string, status: RsvpStatus) {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const eventId = formData.get("eventId");
-  const status = formData.get("status");
-  if (typeof eventId !== "string" || !isRsvpStatus(status)) return;
+  if (!isRsvpStatus(status)) return;
 
   await supabase
     .from("rsvps")
@@ -32,15 +30,12 @@ export async function setRsvp(formData: FormData) {
   revalidatePath("/events");
 }
 
-export async function clearRsvp(formData: FormData) {
+export async function clearRsvp(eventId: string) {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
-
-  const eventId = formData.get("eventId");
-  if (typeof eventId !== "string") return;
 
   await supabase
     .from("rsvps")

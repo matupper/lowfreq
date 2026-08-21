@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useOptimistic, useState, useTransition } from "react";
 import Link from "next/link";
 import EventMap from "./EventMap";
-import type { EventWithVenue } from "./types";
+import type { EventWithVenue, RsvpStatus } from "./types";
 
 // -1deg to 1deg max per the style guide's motif rules — cycle through a
 // small fixed set rather than randomizing on every render.
@@ -20,15 +20,34 @@ const STATUS_LABELS = {
   saved: "saved",
 } as const;
 
+type RsvpAction = { eventId: string; status: RsvpStatus | null };
+
 type Props = {
   events: EventWithVenue[];
-  setRsvp: (formData: FormData) => void;
-  clearRsvp: (formData: FormData) => void;
+  setRsvp: (eventId: string, status: RsvpStatus) => Promise<void>;
+  clearRsvp: (eventId: string) => Promise<void>;
 };
+
+function applyRsvp(events: EventWithVenue[], action: RsvpAction) {
+  return events.map((event) => {
+    if (event.id !== action.eventId || event.myStatus === action.status) {
+      return event;
+    }
+    const counts = { ...event.counts };
+    if (event.myStatus) counts[event.myStatus] -= 1;
+    if (action.status) counts[action.status] += 1;
+    return { ...event, myStatus: action.status, counts };
+  });
+}
 
 export default function EventsBrowser({ events, setRsvp, clearRsvp }: Props) {
   const [view, setView] = useState<"list" | "map">("list");
   const [focusedEventId, setFocusedEventId] = useState<string | null>(null);
+  const [, startTransition] = useTransition();
+  const [optimisticEvents, applyOptimisticRsvp] = useOptimistic(
+    events,
+    applyRsvp
+  );
 
   useEffect(() => {
     if (view !== "list" || !focusedEventId) return;
@@ -36,6 +55,20 @@ export default function EventsBrowser({ events, setRsvp, clearRsvp }: Props) {
       .getElementById(`event-${focusedEventId}`)
       ?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [view, focusedEventId]);
+
+  function handleSetRsvp(eventId: string, status: RsvpStatus) {
+    startTransition(async () => {
+      applyOptimisticRsvp({ eventId, status });
+      await setRsvp(eventId, status);
+    });
+  }
+
+  function handleClearRsvp(eventId: string) {
+    startTransition(async () => {
+      applyOptimisticRsvp({ eventId, status: null });
+      await clearRsvp(eventId);
+    });
+  }
 
   return (
     <main className="flex-1 flex flex-col max-w-md mx-auto w-full px-6 py-10 gap-8">
@@ -72,13 +105,13 @@ export default function EventsBrowser({ events, setRsvp, clearRsvp }: Props) {
         </p>
       </div>
 
-      {events.length === 0 ? (
+      {optimisticEvents.length === 0 ? (
         <p className="font-mono text-xs text-kraft">
           nothing on the calendar yet — check back soon.
         </p>
       ) : view === "map" ? (
         <EventMap
-          events={events}
+          events={optimisticEvents}
           focusedEventId={focusedEventId}
           onSelect={(id) => {
             setFocusedEventId(id);
@@ -87,14 +120,14 @@ export default function EventsBrowser({ events, setRsvp, clearRsvp }: Props) {
         />
       ) : (
         <ul className="flex flex-col gap-6">
-          {events.map((event, i) => (
+          {optimisticEvents.map((event, i) => (
             <li key={event.id} id={`event-${event.id}`}>
               <EventCard
                 event={event}
                 rotation={CARD_ROTATIONS[i % CARD_ROTATIONS.length]}
                 focused={event.id === focusedEventId}
-                setRsvp={setRsvp}
-                clearRsvp={clearRsvp}
+                setRsvp={handleSetRsvp}
+                clearRsvp={handleClearRsvp}
               />
             </li>
           ))}
@@ -114,8 +147,8 @@ function EventCard({
   event: EventWithVenue;
   rotation: string;
   focused: boolean;
-  setRsvp: (formData: FormData) => void;
-  clearRsvp: (formData: FormData) => void;
+  setRsvp: (eventId: string, status: RsvpStatus) => void;
+  clearRsvp: (eventId: string) => void;
 }) {
   const total = event.counts.going + event.counts.interested + event.counts.saved;
 
@@ -149,34 +182,30 @@ function EventCard({
           (status) => {
             const active = event.myStatus === status;
             return (
-              <form key={status} action={setRsvp}>
-                <input type="hidden" name="eventId" value={event.id} />
-                <input type="hidden" name="status" value={status} />
-                <button
-                  type="submit"
-                  className={`font-mono text-[11px] uppercase tracking-wide rounded-full px-3 py-1.5 border transition-colors ${
-                    active
-                      ? "border-riso-pink text-riso-pink"
-                      : "border-line text-kraft hover:border-kraft"
-                  }`}
-                >
-                  {STATUS_LABELS[status]}
-                </button>
-              </form>
+              <button
+                key={status}
+                type="button"
+                onClick={() => setRsvp(event.id, status)}
+                className={`font-mono text-[11px] uppercase tracking-wide rounded-full px-3 py-1.5 border transition-colors ${
+                  active
+                    ? "border-riso-pink text-riso-pink"
+                    : "border-line text-kraft hover:border-kraft"
+                }`}
+              >
+                {STATUS_LABELS[status]}
+              </button>
             );
           }
         )}
 
         {event.myStatus && (
-          <form action={clearRsvp}>
-            <input type="hidden" name="eventId" value={event.id} />
-            <button
-              type="submit"
-              className="font-mono text-[11px] uppercase tracking-wide text-kraft px-2 py-1.5"
-            >
-              clear
-            </button>
-          </form>
+          <button
+            type="button"
+            onClick={() => clearRsvp(event.id)}
+            className="font-mono text-[11px] uppercase tracking-wide text-kraft px-2 py-1.5"
+          >
+            clear
+          </button>
         )}
       </div>
     </div>
