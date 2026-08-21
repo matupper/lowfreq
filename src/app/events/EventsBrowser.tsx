@@ -43,6 +43,7 @@ function applyRsvp(events: EventWithVenue[], action: RsvpAction) {
 export default function EventsBrowser({ events, setRsvp, clearRsvp }: Props) {
   const [view, setView] = useState<"list" | "map">("list");
   const [focusedEventId, setFocusedEventId] = useState<string | null>(null);
+  const [rsvpError, setRsvpError] = useState<string | null>(null);
   const [, startTransition] = useTransition();
   const [optimisticEvents, applyOptimisticRsvp] = useOptimistic(
     events,
@@ -59,14 +60,24 @@ export default function EventsBrowser({ events, setRsvp, clearRsvp }: Props) {
   function handleSetRsvp(eventId: string, status: RsvpStatus) {
     startTransition(async () => {
       applyOptimisticRsvp({ eventId, status });
-      await setRsvp(eventId, status);
+      try {
+        await setRsvp(eventId, status);
+        setRsvpError(null);
+      } catch {
+        setRsvpError("couldn't save that rsvp — try again.");
+      }
     });
   }
 
   function handleClearRsvp(eventId: string) {
     startTransition(async () => {
       applyOptimisticRsvp({ eventId, status: null });
-      await clearRsvp(eventId);
+      try {
+        await clearRsvp(eventId);
+        setRsvpError(null);
+      } catch {
+        setRsvpError("couldn't clear that rsvp — try again.");
+      }
     });
   }
 
@@ -103,6 +114,11 @@ export default function EventsBrowser({ events, setRsvp, clearRsvp }: Props) {
         <p className="text-sm text-kraft leading-relaxed pt-2">
           Upcoming, soonest first.
         </p>
+        {rsvpError && (
+          <p className="font-mono text-[11px] text-stamp-red pt-1">
+            {rsvpError}
+          </p>
+        )}
       </div>
 
       {optimisticEvents.length === 0 ? (
