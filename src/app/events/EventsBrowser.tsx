@@ -3,7 +3,7 @@
 import { useEffect, useOptimistic, useState, useTransition } from "react";
 import Link from "next/link";
 import EventMap from "./EventMap";
-import type { EventWithVenue, RsvpStatus } from "./types";
+import type { EventWithVenue } from "./types";
 
 // -1deg to 1deg max per the style guide's motif rules — cycle through a
 // small fixed set rather than randomizing on every render.
@@ -14,33 +14,30 @@ const CARD_ROTATIONS = [
   "rotate-[0.7deg]",
 ];
 
-const STATUS_LABELS = {
-  going: "going",
-  interested: "interested",
-  saved: "saved",
-} as const;
-
-type RsvpAction = { eventId: string; status: RsvpStatus | null };
+type RsvpAction =
+  | { eventId: string; kind: "going"; value: boolean }
+  | { eventId: string; kind: "saved"; value: boolean };
 
 type Props = {
   events: EventWithVenue[];
-  setRsvp: (eventId: string, status: RsvpStatus) => Promise<void>;
-  clearRsvp: (eventId: string) => Promise<void>;
+  setGoing: (eventId: string, going: boolean) => Promise<void>;
+  setSaved: (eventId: string, saved: boolean) => Promise<void>;
 };
 
 function applyRsvp(events: EventWithVenue[], action: RsvpAction) {
   return events.map((event) => {
-    if (event.id !== action.eventId || event.myStatus === action.status) {
-      return event;
+    if (event.id !== action.eventId) return event;
+    if (action.kind === "going") {
+      if (event.myGoing === action.value) return event;
+      const goingCount = event.goingCount + (action.value ? 1 : -1);
+      return { ...event, myGoing: action.value, goingCount };
     }
-    const counts = { ...event.counts };
-    if (event.myStatus) counts[event.myStatus] -= 1;
-    if (action.status) counts[action.status] += 1;
-    return { ...event, myStatus: action.status, counts };
+    if (event.mySaved === action.value) return event;
+    return { ...event, mySaved: action.value };
   });
 }
 
-export default function EventsBrowser({ events, setRsvp, clearRsvp }: Props) {
+export default function EventsBrowser({ events, setGoing, setSaved }: Props) {
   const [view, setView] = useState<"list" | "map">("list");
   const [focusedEventId, setFocusedEventId] = useState<string | null>(null);
   const [rsvpError, setRsvpError] = useState<string | null>(null);
@@ -57,11 +54,11 @@ export default function EventsBrowser({ events, setRsvp, clearRsvp }: Props) {
       ?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [view, focusedEventId]);
 
-  function handleSetRsvp(eventId: string, status: RsvpStatus) {
+  function handleSetGoing(eventId: string, going: boolean) {
     startTransition(async () => {
-      applyOptimisticRsvp({ eventId, status });
+      applyOptimisticRsvp({ eventId, kind: "going", value: going });
       try {
-        await setRsvp(eventId, status);
+        await setGoing(eventId, going);
         setRsvpError(null);
       } catch {
         setRsvpError("couldn't save that rsvp — try again.");
@@ -69,14 +66,14 @@ export default function EventsBrowser({ events, setRsvp, clearRsvp }: Props) {
     });
   }
 
-  function handleClearRsvp(eventId: string) {
+  function handleSetSaved(eventId: string, saved: boolean) {
     startTransition(async () => {
-      applyOptimisticRsvp({ eventId, status: null });
+      applyOptimisticRsvp({ eventId, kind: "saved", value: saved });
       try {
-        await clearRsvp(eventId);
+        await setSaved(eventId, saved);
         setRsvpError(null);
       } catch {
-        setRsvpError("couldn't clear that rsvp — try again.");
+        setRsvpError("couldn't save that — try again.");
       }
     });
   }
@@ -142,8 +139,8 @@ export default function EventsBrowser({ events, setRsvp, clearRsvp }: Props) {
                 event={event}
                 rotation={CARD_ROTATIONS[i % CARD_ROTATIONS.length]}
                 focused={event.id === focusedEventId}
-                setRsvp={handleSetRsvp}
-                clearRsvp={handleClearRsvp}
+                setGoing={handleSetGoing}
+                setSaved={handleSetSaved}
               />
             </li>
           ))}
@@ -157,17 +154,15 @@ function EventCard({
   event,
   rotation,
   focused,
-  setRsvp,
-  clearRsvp,
+  setGoing,
+  setSaved,
 }: {
   event: EventWithVenue;
   rotation: string;
   focused: boolean;
-  setRsvp: (eventId: string, status: RsvpStatus) => void;
-  clearRsvp: (eventId: string) => void;
+  setGoing: (eventId: string, going: boolean) => void;
+  setSaved: (eventId: string, saved: boolean) => void;
 }) {
-  const total = event.counts.going + event.counts.interested + event.counts.saved;
-
   return (
     <div
       className={`bg-surface border border-ink rounded-[2px] p-5 ${rotation} ${
@@ -179,10 +174,10 @@ function EventCard({
       </h2>
       <p className="font-mono text-[11px] text-kraft mt-2">
         {event.venue.name} &middot; {event.displayTime}
-        {total > 0 && (
+        {event.goingCount > 0 && (
           <>
             {" "}
-            &middot; {event.counts.going} going
+            &middot; {event.goingCount} going
           </>
         )}
       </p>
@@ -194,35 +189,28 @@ function EventCard({
       )}
 
       <div className="border-t border-dashed border-line mt-4 pt-4 flex flex-wrap items-center gap-2">
-        {(Object.keys(STATUS_LABELS) as Array<keyof typeof STATUS_LABELS>).map(
-          (status) => {
-            const active = event.myStatus === status;
-            return (
-              <button
-                key={status}
-                type="button"
-                onClick={() => setRsvp(event.id, status)}
-                className={`font-mono text-[11px] uppercase tracking-wide rounded-full px-3 py-1.5 border transition-colors ${
-                  active
-                    ? "border-riso-pink text-riso-pink"
-                    : "border-line text-kraft hover:border-kraft"
-                }`}
-              >
-                {STATUS_LABELS[status]}
-              </button>
-            );
-          }
-        )}
-
-        {event.myStatus && (
-          <button
-            type="button"
-            onClick={() => clearRsvp(event.id)}
-            className="font-mono text-[11px] uppercase tracking-wide text-kraft px-2 py-1.5"
-          >
-            clear
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={() => setGoing(event.id, !event.myGoing)}
+          className={`font-mono text-[11px] uppercase tracking-wide rounded-full px-3 py-1.5 border transition-colors ${
+            event.myGoing
+              ? "border-riso-pink text-riso-pink"
+              : "border-line text-kraft hover:border-kraft"
+          }`}
+        >
+          going
+        </button>
+        <button
+          type="button"
+          onClick={() => setSaved(event.id, !event.mySaved)}
+          className={`font-mono text-[11px] uppercase tracking-wide rounded-full px-3 py-1.5 border transition-colors ${
+            event.mySaved
+              ? "border-riso-pink text-riso-pink"
+              : "border-line text-kraft hover:border-kraft"
+          }`}
+        >
+          save
+        </button>
       </div>
     </div>
   );

@@ -1,5 +1,3 @@
-export type RsvpStatus = "going" | "interested" | "saved";
-
 export type EventWithVenue = {
   id: string;
   title: string;
@@ -13,6 +11,7 @@ export type EventWithVenue = {
     lat: number;
     lng: number;
   };
-  counts: Record<RsvpStatus, number>;
-  myStatus: RsvpStatus | null;
+  goingCount: number;
+  myGoing: boolean;
+  mySaved: boolean;
 };

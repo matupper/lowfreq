@@ -34,14 +34,14 @@ export default async function ProfilePage() {
   const [rsvpsResult, treeResult] = await Promise.all([
     supabase
       .from("rsvps")
-      .select("status, event:events(id, title, start_time)")
+      .select("going, saved, event:events(id, title, start_time)")
       .eq("user_id", user.id),
     supabase.rpc("get_invite_tree"),
   ]);
 
   const rsvps = rsvpsResult.data ?? [];
-  const going = rsvps.filter((r) => r.status === "going");
-  const saved = rsvps.filter((r) => r.status === "saved");
+  const going = rsvps.filter((r) => r.going);
+  const saved = rsvps.filter((r) => r.saved);
   const tree = (treeResult.data ?? []) as InviteTreeRow[];
 
   return (
@@ -132,8 +132,8 @@ function ShowList({
   going,
   saved,
 }: {
-  going: { status: string; event: EventStub | EventStub[] | null }[];
-  saved: { status: string; event: EventStub | EventStub[] | null }[];
+  going: { event: EventStub | EventStub[] | null }[];
+  saved: { event: EventStub | EventStub[] | null }[];
 }) {
   return (
     <div className="flex flex-col gap-4">
