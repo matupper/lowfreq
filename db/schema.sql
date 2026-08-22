@@ -1,6 +1,11 @@
--- lowfreq — full schema (v2)
+-- lowfreq — full schema (v3)
 -- Safe to re-run: drops existing tables/trigger first, then recreates everything.
 -- Run this in the Supabase SQL editor.
+--
+-- WARNING: this drops and recreates every table, discarding all data. For an
+-- existing deployment with real rows to preserve, use
+-- db/migrations/0001_rsvp_going_saved.sql instead, which alters the live
+-- `rsvps` table in place.
 
 -- ── Clean slate ──────────────────────────────────────────────
 drop trigger if exists on_auth_user_created on auth.users;
@@ -58,13 +63,19 @@ create table events (
   created_at timestamptz not null default now()
 );
 
+-- Going and saved are independent facts about one user/event pair, not a
+-- single enum: a show can be saved without going, going without being
+-- saved, or both. A row only exists while at least one is true — clearing
+-- both deletes the row rather than leaving an inert 0/0 record.
 create table rsvps (
   id uuid primary key default gen_random_uuid(),
   user_id uuid references users(id) not null,
   event_id uuid references events(id) not null,
-  status text not null default 'going' check (status in ('going', 'interested', 'saved')),
+  going boolean not null default false,
+  saved boolean not null default false,
   created_at timestamptz not null default now(),
-  unique (user_id, event_id)
+  unique (user_id, event_id),
+  check (going or saved)
 );
 
 -- ── Indexes ──────────────────────────────────────────────────
@@ -107,31 +118,85 @@ create policy "users can create their own invites" on invites for insert with ch
 create policy "users can view their own invites" on invites for select using (auth.uid() = created_by);
 create policy "users can view their own rsvps" on rsvps for select using (auth.uid() = user_id);
 create policy "users can create their own rsvps" on rsvps for insert with check (auth.uid() = user_id);
--- Needed so a user can change their mind (going -> interested) or cancel:
--- an upsert on the (user_id, event_id) unique constraint issues an UPDATE
--- on conflict, and cancelling issues a DELETE.
+-- Needed so a user can toggle going/saved independently (an upsert on the
+-- (user_id, event_id) unique constraint issues an UPDATE on conflict) or
+-- clear both, which issues a DELETE.
 create policy "users can update their own rsvps" on rsvps for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "users can delete their own rsvps" on rsvps for delete using (auth.uid() = user_id);
 
 -- ── RSVP counts (privacy-preserving) ─────────────────────────
 -- The rsvps select policy above is intentionally scoped to auth.uid() =
 -- user_id, so a plain client-side select can't read other users' RSVPs
--- to compute "N going". This returns aggregate counts only — never which
--- specific users RSVPed — via a security-definer function.
-create or replace function public.event_rsvp_counts(event_ids uuid[])
-returns table (event_id uuid, status text, count bigint)
+-- to compute "N going". This returns aggregate going counts only — never
+-- which specific users are going, and never save counts (saves are a
+-- private bookmark, not a public signal) — via a security-definer function.
+create or replace function public.event_going_counts(event_ids uuid[])
+returns table (event_id uuid, count bigint)
 language sql
 stable
 security definer
 set search_path = public
 as $$
-  select event_id, status, count(*)
+  select event_id, count(*)
   from rsvps
-  where event_id = any(event_ids)
-  group by event_id, status;
+  where event_id = any(event_ids) and going
+  group by event_id;
 $$;
 
-grant execute on function public.event_rsvp_counts(uuid[]) to authenticated, anon;
+grant execute on function public.event_going_counts(uuid[]) to authenticated, anon;
+
+-- Toggling going/saved independently requires a read-modify-write to avoid
+-- clobbering the untouched column. Doing that read in the app layer is
+-- racy under concurrent toggles (two calls can read the same stale row and
+-- each write back a state that drops the other's change), so it's done
+-- here instead: each function runs as a single statement/transaction, and
+-- the delete-then-update ordering means a row is only ever left in a state
+-- that satisfies check(going or saved), never briefly violates it.
+create or replace function public.set_rsvp_going(p_event_id uuid, p_value boolean)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if p_value then
+    insert into rsvps (user_id, event_id, going, saved)
+    values (auth.uid(), p_event_id, true, false)
+    on conflict (user_id, event_id) do update set going = true;
+  else
+    delete from rsvps
+    where user_id = auth.uid() and event_id = p_event_id and not saved;
+
+    update rsvps set going = false
+    where user_id = auth.uid() and event_id = p_event_id;
+  end if;
+end;
+$$;
+
+grant execute on function public.set_rsvp_going(uuid, boolean) to authenticated;
+
+create or replace function public.set_rsvp_saved(p_event_id uuid, p_value boolean)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if p_value then
+    insert into rsvps (user_id, event_id, going, saved)
+    values (auth.uid(), p_event_id, false, true)
+    on conflict (user_id, event_id) do update set saved = true;
+  else
+    delete from rsvps
+    where user_id = auth.uid() and event_id = p_event_id and not going;
+
+    update rsvps set saved = false
+    where user_id = auth.uid() and event_id = p_event_id;
+  end if;
+end;
+$$;
+
+grant execute on function public.set_rsvp_saved(uuid, boolean) to authenticated;
 
 -- ── Invite gating ─────────────────────────────────────────────
 -- Registration happens before the requester has a session, so these run

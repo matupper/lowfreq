@@ -1,8 +1,8 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import EventsBrowser from "./EventsBrowser";
-import { setRsvp, clearRsvp } from "./actions";
-import type { EventWithVenue, RsvpStatus } from "./types";
+import { setGoing, setSaved } from "./actions";
+import type { EventWithVenue } from "./types";
 
 // MVP is single-scene/single-city, so a fixed display timezone (rather
 // than per-user) is the right call for now — see CLAUDE.md build order.
@@ -39,25 +39,21 @@ export default async function EventsPage() {
 
   const [countsResult, myRsvpsResult] = await Promise.all([
     eventIds.length
-      ? supabase.rpc("event_rsvp_counts", { event_ids: eventIds })
-      : Promise.resolve({ data: [] as { event_id: string; status: string; count: number }[] }),
+      ? supabase.rpc("event_going_counts", { event_ids: eventIds })
+      : Promise.resolve({ data: [] as { event_id: string; count: number }[] }),
     eventIds.length
-      ? supabase.from("rsvps").select("event_id, status").in("event_id", eventIds)
-      : Promise.resolve({ data: [] as { event_id: string; status: string }[] }),
+      ? supabase.from("rsvps").select("event_id, going, saved").in("event_id", eventIds)
+      : Promise.resolve({ data: [] as { event_id: string; going: boolean; saved: boolean }[] }),
   ]);
 
-  const countsByEvent = new Map<string, Record<RsvpStatus, number>>();
+  const goingCountByEvent = new Map<string, number>();
   for (const row of countsResult.data ?? []) {
-    const bucket =
-      countsByEvent.get(row.event_id) ??
-      ({ going: 0, interested: 0, saved: 0 } as Record<RsvpStatus, number>);
-    bucket[row.status as RsvpStatus] = Number(row.count);
-    countsByEvent.set(row.event_id, bucket);
+    goingCountByEvent.set(row.event_id, Number(row.count));
   }
 
-  const myStatusByEvent = new Map<string, RsvpStatus>();
+  const myRsvpByEvent = new Map<string, { going: boolean; saved: boolean }>();
   for (const row of myRsvpsResult.data ?? []) {
-    myStatusByEvent.set(row.event_id, row.status as RsvpStatus);
+    myRsvpByEvent.set(row.event_id, { going: row.going, saved: row.saved });
   }
 
   const eventsWithMeta: EventWithVenue[] = events
@@ -69,17 +65,16 @@ export default async function EventsPage() {
       startTime: e.start_time,
       displayTime: timeFormatter.format(new Date(e.start_time)).toLowerCase(),
       venue: Array.isArray(e.venue) ? e.venue[0] : e.venue,
-      counts:
-        countsByEvent.get(e.id) ??
-        ({ going: 0, interested: 0, saved: 0 } as Record<RsvpStatus, number>),
-      myStatus: myStatusByEvent.get(e.id) ?? null,
+      goingCount: goingCountByEvent.get(e.id) ?? 0,
+      myGoing: myRsvpByEvent.get(e.id)?.going ?? false,
+      mySaved: myRsvpByEvent.get(e.id)?.saved ?? false,
     }));
 
   return (
     <EventsBrowser
       events={eventsWithMeta}
-      setRsvp={setRsvp}
-      clearRsvp={clearRsvp}
+      setGoing={setGoing}
+      setSaved={setSaved}
     />
   );
 }

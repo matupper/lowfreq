@@ -11,8 +11,9 @@ function makeEvent(overrides: Partial<EventWithVenue> = {}): EventWithVenue {
     startTime: "2026-09-01T02:00:00Z",
     displayTime: "sep 1",
     venue: { id: "venue-1", name: "The Basement", address: null, lat: 0, lng: 0 },
-    counts: { going: 0, interested: 0, saved: 0 },
-    myStatus: null,
+    goingCount: 0,
+    myGoing: false,
+    mySaved: false,
     ...overrides,
   };
 }
@@ -34,11 +35,11 @@ describe("EventsBrowser RSVP optimistic update", () => {
 
   it("updates the going count immediately on click, before the server action resolves", async () => {
     const { promise, resolve } = deferred<void>();
-    const setRsvp = vi.fn().mockReturnValue(promise);
-    const clearRsvp = vi.fn();
+    const setGoing = vi.fn().mockReturnValue(promise);
+    const setSaved = vi.fn();
 
     render(
-      <EventsBrowser events={[makeEvent()]} setRsvp={setRsvp} clearRsvp={clearRsvp} />
+      <EventsBrowser events={[makeEvent()]} setGoing={setGoing} setSaved={setSaved} />
     );
 
     fireEvent.click(screen.getByRole("button", { name: "going" }));
@@ -49,18 +50,18 @@ describe("EventsBrowser RSVP optimistic update", () => {
     await waitFor(() => {
       expect(screen.getByText(/1 going/)).toBeTruthy();
     });
-    expect(setRsvp).toHaveBeenCalledWith("event-1", "going");
+    expect(setGoing).toHaveBeenCalledWith("event-1", true);
 
     resolve();
     await waitFor(() => expect(screen.queryByText(/couldn't save/)).toBeNull());
   });
 
   it("rolls back the optimistic update and shows an error when the server action fails", async () => {
-    const setRsvp = vi.fn().mockRejectedValue(new Error("db unavailable"));
-    const clearRsvp = vi.fn();
+    const setGoing = vi.fn().mockRejectedValue(new Error("db unavailable"));
+    const setSaved = vi.fn();
 
     render(
-      <EventsBrowser events={[makeEvent()]} setRsvp={setRsvp} clearRsvp={clearRsvp} />
+      <EventsBrowser events={[makeEvent()]} setGoing={setGoing} setSaved={setSaved} />
     );
 
     fireEvent.click(screen.getByRole("button", { name: "going" }));
@@ -74,5 +75,39 @@ describe("EventsBrowser RSVP optimistic update", () => {
       expect(screen.getByText(/couldn't save that rsvp/)).toBeTruthy()
     );
     await waitFor(() => expect(screen.queryByText(/1 going/)).toBeNull());
+  });
+
+  it("toggles going off when clicked while already going", async () => {
+    const setGoing = vi.fn().mockResolvedValue(undefined);
+    const setSaved = vi.fn();
+
+    render(
+      <EventsBrowser
+        events={[makeEvent({ myGoing: true, goingCount: 1 })]}
+        setGoing={setGoing}
+        setSaved={setSaved}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "going" }));
+
+    await waitFor(() => expect(screen.queryByText(/1 going/)).toBeNull());
+    expect(setGoing).toHaveBeenCalledWith("event-1", false);
+  });
+
+  it("saving a show is independent of going status", async () => {
+    const setGoing = vi.fn();
+    const setSaved = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <EventsBrowser events={[makeEvent()]} setGoing={setGoing} setSaved={setSaved} />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "save" }));
+
+    await waitFor(() => expect(setSaved).toHaveBeenCalledWith("event-1", true));
+    expect(setGoing).not.toHaveBeenCalled();
+    // Saving doesn't touch the public going count.
+    expect(screen.queryByText(/1 going/)).toBeNull();
   });
 });

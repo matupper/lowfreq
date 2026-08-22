@@ -45,8 +45,11 @@ tightening of existing checks, not a rewrite.
 - public.users.id is the SAME id as auth.users.id (Supabase Auth), linked
   via a foreign key + trigger (handle_new_user). Never manually insert
   into public.users after signup — the trigger handles it.
-- rsvps.status covers going/interested/saved — there's no separate
-  "saved events" table by design, to avoid an extra join.
+- rsvps has independent `going` and `saved` booleans on the same row (not
+  a single status enum) — a show can be saved without going, going
+  without being saved, or both. No "interested" state; there's no
+  separate "saved events" table by design, to avoid an extra join. See
+  docs/designdoc.md §6.
 - venues.owner_id is nullable — most venues start unclaimed; "claiming"
   a venue is a later feature, not MVP.
 
