@@ -29,14 +29,17 @@ Display: Anton (all-caps by nature — lean into it, don't fight it with
 mixed-case headlines elsewhere). Body: Inter. Metadata/timestamps/stubs:
 IBM Plex Mono. Accent (stamp moments only): Special Elite.
 
-## Invite system — phased, don't build Phase 2 early
-- Phase 1 (current/MVP): invite = single-use token, no expiry enforced,
-  no location check. Still creates a real invite tree via
-  users.invited_by → invites.id.
-- Phase 2 (later, don't build yet): tighten to time-limited tokens
-  (expires_at) + GPS proximity check at scan time. The schema already
-  supports this (expires_at column exists unused in Phase 1) — this is
-  meant to be a tightening of existing checks, not a rewrite.
+## Invite system — token model, don't tighten early
+Invite generation, scanning, gated registration, the onboarding gate,
+and the invite tree are built — see docs/designdoc.md §9 (Phase 2) for
+the checklist. Current token model: single-use, no expiry enforced, no
+location check. Still creates a real invite tree via
+users.invited_by → invites.id.
+
+Location-verified, time-limited tokens (docs/designdoc.md §9 Phase 3)
+are the next tightening — don't build yet. The schema already supports
+this (expires_at column exists, unused for now) — this is meant to be a
+tightening of existing checks, not a rewrite.
 
 ## Data model notes
 - public.users.id is the SAME id as auth.users.id (Supabase Auth), linked
@@ -47,11 +50,10 @@ IBM Plex Mono. Accent (stamp moments only): Special Elite.
 - venues.owner_id is nullable — most venues start unclaimed; "claiming"
   a venue is a later feature, not MVP.
 
-## Build order (don't jump ahead)
-1. Basic email/password auth (done or in progress)
-2. Event browse (map/list) + RSVP — core loop, no invite dependency
-3. Invite creation + QR generation for existing users
-4. Invite scan + gated registration (built last — depends on 1-3)
+## Build order
+Auth, event browse/RSVP, and invite gating (generation, scanning, gated
+registration, onboarding gate, invite tree) are all built. For what's
+next, see docs/designdoc.md §9 (Phase 3 onward).
 
 ## Copy voice
 Blunt, factual, not corporate. "You don't just sign up, someone lets you

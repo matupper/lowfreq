@@ -455,17 +455,17 @@ depend on a later, harder stage being finished first.
 - [ ] Event feed — list view first, map view second
 - [ ] Event detail screen
 - [ ] RSVP + Save, writing to `rsvps`
-- [ ] Profile screen showing a user's own RSVPs/saves
+- [x] Profile screen showing a user's own RSVPs/saves
 
 **Milestone:** a logged-in user can browse real seeded events and RSVP.
 Demoable, even without the invite system working yet.
 
-### Phase 2 — Invite gating (MVP-complete)
-- [ ] Invite generation screen + QR rendering (stamp-styled)
-- [ ] Camera scan flow
-- [ ] Registration flow gated behind a valid, unused invite token
-- [ ] Onboarding gate screen (replaces open signup as the default entry point)
-- [ ] Invite tree visible on Profile
+### Phase 2 — Invite gating (MVP-complete, done)
+- [x] Invite generation screen + QR rendering (stamp-styled)
+- [x] Camera scan flow
+- [x] Registration flow gated behind a valid, unused invite token
+- [x] Onboarding gate screen (replaces open signup as the default entry point)
+- [x] Invite tree visible on Profile
 
 **Milestone:** the app is now actually invite-only end to end — this is
 the MVP.
