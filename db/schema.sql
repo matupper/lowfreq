@@ -198,7 +198,7 @@ as $$
   where id = target_invite_id and status = 'used';
 $$;
 
-grant execute on function public.release_invite(uuid) to authenticated, anon;
+grant execute on function public.release_invite(uuid) to anon;
 
 -- Profile's invite tree: every invite the caller has generated, and who
 -- (if anyone) redeemed it. security definer so this can join into other
