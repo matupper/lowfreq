@@ -70,9 +70,9 @@ export default function LoginPage() {
 
       <div className="border-t border-dashed border-line pt-6">
         <p className="font-mono text-xs text-kraft">
-          new here?{" "}
-          <Link href="/signup" className="text-riso-pink">
-            create an account
+          new here? you&apos;ll need an invite —{" "}
+          <Link href="/" className="text-riso-pink">
+            get let in
           </Link>
         </p>
       </div>

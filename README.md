@@ -62,8 +62,8 @@ keep it as your design reference.
 - [x] Project scaffold, design tokens, dark mode
 - [x] Supabase auth wired to the `users` table
 - [x] Event browse (list/map) + RSVP
-- [ ] Invite creation + QR generation for existing users
-- [ ] Invite scanning + registration flow
+- [x] Invite creation + QR generation for existing users
+- [x] Invite scanning + gated registration, onboarding gate, invite tree on profile
 - [ ] Venue creation for venue owners
 - [ ] Phase 2: time-limited invites + location-verified scanning
 
