@@ -32,12 +32,20 @@ export default async function HomePage() {
         </p>
       </div>
 
-      <Link
-        href="/events"
-        className="bg-ink text-btn-on-ink rounded-[2px] py-3.5 text-sm font-medium text-center"
-      >
-        Browse shows
-      </Link>
+      <div className="flex flex-col gap-2.5">
+        <Link
+          href="/events"
+          className="bg-ink text-btn-on-ink rounded-[2px] py-3.5 text-sm font-medium text-center"
+        >
+          Browse shows
+        </Link>
+        <Link
+          href="/profile"
+          className="text-kraft font-mono text-xs py-1.5 text-center"
+        >
+          Profile &amp; invites
+        </Link>
+      </div>
     </main>
   );
 }

@@ -73,11 +73,18 @@ create index rsvps_event_id_idx on rsvps (event_id);
 create index invites_token_idx on invites (token);
 
 -- ── Auto-create a users row when someone signs up via Supabase Auth ──
+-- invite_id in metadata comes from the gated registration flow (redeem_invite
+-- runs first and hands its invite id to auth.signUp's metadata); absent for
+-- any account created without going through that flow.
 create or replace function public.handle_new_user()
 returns trigger as $$
 begin
-  insert into public.users (id, name)
-  values (new.id, coalesce(new.raw_user_meta_data->>'name', 'new user'));
+  insert into public.users (id, name, invited_by)
+  values (
+    new.id,
+    coalesce(new.raw_user_meta_data->>'name', 'new user'),
+    nullif(new.raw_user_meta_data->>'invite_id', '')::uuid
+  );
   return new;
 end;
 $$ language plpgsql security definer;
@@ -96,6 +103,8 @@ alter table rsvps enable row level security;
 create policy "users can view own row" on users for select using (auth.uid() = id);
 create policy "events are publicly readable" on events for select using (true);
 create policy "venues are publicly readable" on venues for select using (true);
+create policy "users can create their own invites" on invites for insert with check (auth.uid() = created_by);
+create policy "users can view their own invites" on invites for select using (auth.uid() = created_by);
 create policy "users can view their own rsvps" on rsvps for select using (auth.uid() = user_id);
 create policy "users can create their own rsvps" on rsvps for insert with check (auth.uid() = user_id);
 -- Needed so a user can change their mind (going -> interested) or cancel:
@@ -123,3 +132,97 @@ as $$
 $$;
 
 grant execute on function public.event_rsvp_counts(uuid[]) to authenticated, anon;
+
+-- ── Invite gating ─────────────────────────────────────────────
+-- Registration happens before the requester has a session, so these run
+-- security definer rather than depending on RLS policies scoped to
+-- auth.uid(). Each is deliberately narrow (an existence check, an atomic
+-- redeem, a rollback, an own-tree read) rather than exposing the invites
+-- table broadly to anon/authenticated.
+
+-- Peek only — used to show a clear error before rendering the
+-- registration form, without consuming the invite. The real check that
+-- matters is the atomic one in redeem_invite at submit time.
+create or replace function public.check_invite(invite_token text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from invites where token = invite_token and status = 'unused'
+  );
+$$;
+
+grant execute on function public.check_invite(text) to authenticated, anon;
+
+-- Atomically marks an invite used. The single UPDATE ... WHERE status =
+-- 'unused' is what makes this race-safe: if two people redeem the same
+-- token at once, only one UPDATE matches a row and returns it.
+create or replace function public.redeem_invite(invite_token text)
+returns table (invite_id uuid, created_by uuid)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  found_id uuid;
+  found_created_by uuid;
+begin
+  update invites
+  set status = 'used', used_at = now()
+  where token = invite_token and status = 'unused'
+  returning id, invites.created_by into found_id, found_created_by;
+
+  if found_id is null then
+    return;
+  end if;
+
+  return query select found_id, found_created_by;
+end;
+$$;
+
+grant execute on function public.redeem_invite(text) to authenticated, anon;
+
+-- Rolls back a redeem when the account creation that followed it failed,
+-- so a real signup error doesn't permanently burn a valid invite.
+create or replace function public.release_invite(target_invite_id uuid)
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  update invites
+  set status = 'unused', used_at = null
+  where id = target_invite_id and status = 'used';
+$$;
+
+grant execute on function public.release_invite(uuid) to authenticated, anon;
+
+-- Profile's invite tree: every invite the caller has generated, and who
+-- (if anyone) redeemed it. security definer so this can join into other
+-- users' name/created_at without a broader users select policy.
+create or replace function public.get_invite_tree()
+returns table (
+  invite_id uuid,
+  token text,
+  status text,
+  created_at timestamptz,
+  invitee_id uuid,
+  invitee_name text,
+  invitee_joined_at timestamptz
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select i.id, i.token, i.status, i.created_at, u.id, u.name, u.created_at
+  from invites i
+  left join users u on u.invited_by = i.id
+  where i.created_by = auth.uid()
+  order by i.created_at desc;
+$$;
+
+grant execute on function public.get_invite_tree() to authenticated;
