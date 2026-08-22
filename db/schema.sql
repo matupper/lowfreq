@@ -145,6 +145,59 @@ $$;
 
 grant execute on function public.event_going_counts(uuid[]) to authenticated, anon;
 
+-- Toggling going/saved independently requires a read-modify-write to avoid
+-- clobbering the untouched column. Doing that read in the app layer is
+-- racy under concurrent toggles (two calls can read the same stale row and
+-- each write back a state that drops the other's change), so it's done
+-- here instead: each function runs as a single statement/transaction, and
+-- the delete-then-update ordering means a row is only ever left in a state
+-- that satisfies check(going or saved), never briefly violates it.
+create or replace function public.set_rsvp_going(p_event_id uuid, p_value boolean)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if p_value then
+    insert into rsvps (user_id, event_id, going, saved)
+    values (auth.uid(), p_event_id, true, false)
+    on conflict (user_id, event_id) do update set going = true;
+  else
+    delete from rsvps
+    where user_id = auth.uid() and event_id = p_event_id and not saved;
+
+    update rsvps set going = false
+    where user_id = auth.uid() and event_id = p_event_id;
+  end if;
+end;
+$$;
+
+grant execute on function public.set_rsvp_going(uuid, boolean) to authenticated;
+
+create or replace function public.set_rsvp_saved(p_event_id uuid, p_value boolean)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if p_value then
+    insert into rsvps (user_id, event_id, going, saved)
+    values (auth.uid(), p_event_id, false, true)
+    on conflict (user_id, event_id) do update set saved = true;
+  else
+    delete from rsvps
+    where user_id = auth.uid() and event_id = p_event_id and not going;
+
+    update rsvps set saved = false
+    where user_id = auth.uid() and event_id = p_event_id;
+  end if;
+end;
+$$;
+
+grant execute on function public.set_rsvp_saved(uuid, boolean) to authenticated;
+
 -- ── Invite gating ─────────────────────────────────────────────
 -- Registration happens before the requester has a session, so these run
 -- security definer rather than depending on RLS policies scoped to

@@ -9,9 +9,12 @@ function isEventId(value: unknown): value is string {
 }
 
 // Going and saved are independent booleans on the same row (see
-// docs/designdoc.md §6) — toggling one must not clobber the other, so this
-// reads the row's current opposite value before writing, and deletes the
-// row entirely once both are false rather than leaving an inert 0/0 record.
+// docs/designdoc.md §6) — toggling one must not clobber the other. That
+// read-modify-write happens atomically in the set_rsvp_going/set_rsvp_saved
+// DB functions (db/schema.sql) rather than here, since a client-side
+// read-then-write would let two concurrent toggles (e.g. "going" and
+// "save" in quick succession) race on the same stale snapshot and silently
+// drop one of the changes.
 async function updateRsvp(
   eventId: string,
   patch: { going: boolean } | { saved: boolean }
@@ -26,35 +29,17 @@ async function updateRsvp(
     throw new Error("Invalid RSVP request");
   }
 
-  const { data: existing, error: readError } = await supabase
-    .from("rsvps")
-    .select("going, saved")
-    .eq("user_id", user.id)
-    .eq("event_id", eventId)
-    .maybeSingle();
-  if (readError) throw readError;
-
-  const next = {
-    going: "going" in patch ? patch.going : (existing?.going ?? false),
-    saved: "saved" in patch ? patch.saved : (existing?.saved ?? false),
-  };
-
-  if (!next.going && !next.saved) {
-    const { error } = await supabase
-      .from("rsvps")
-      .delete()
-      .eq("user_id", user.id)
-      .eq("event_id", eventId);
-    if (error) throw error;
-  } else {
-    const { error } = await supabase
-      .from("rsvps")
-      .upsert(
-        { user_id: user.id, event_id: eventId, ...next },
-        { onConflict: "user_id,event_id" }
-      );
-    if (error) throw error;
-  }
+  const { error } =
+    "going" in patch
+      ? await supabase.rpc("set_rsvp_going", {
+          p_event_id: eventId,
+          p_value: patch.going,
+        })
+      : await supabase.rpc("set_rsvp_saved", {
+          p_event_id: eventId,
+          p_value: patch.saved,
+        });
+  if (error) throw error;
 
   revalidatePath("/events");
 }
