@@ -3,6 +3,11 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import EventsBrowser from "./EventsBrowser";
 import type { EventWithVenue } from "./types";
 
+const getCurrentLocation = vi.fn();
+vi.mock("@/lib/geolocation-client", () => ({
+  getCurrentLocation: (...args: unknown[]) => getCurrentLocation(...args),
+}));
+
 function makeEvent(overrides: Partial<EventWithVenue> = {}): EventWithVenue {
   return {
     id: "event-1",
@@ -14,6 +19,8 @@ function makeEvent(overrides: Partial<EventWithVenue> = {}): EventWithVenue {
     goingCount: 0,
     myGoing: false,
     mySaved: false,
+    hasStarted: false,
+    attendedAt: null,
     ...overrides,
   };
 }
@@ -31,15 +38,24 @@ function deferred<T>() {
 }
 
 describe("EventsBrowser RSVP optimistic update", () => {
-  afterEach(() => cleanup());
+  afterEach(() => {
+    cleanup();
+    getCurrentLocation.mockReset();
+  });
 
   it("updates the going count immediately on click, before the server action resolves", async () => {
     const { promise, resolve } = deferred<void>();
     const setGoing = vi.fn().mockReturnValue(promise);
     const setSaved = vi.fn();
+    const confirmAttendance = vi.fn();
 
     render(
-      <EventsBrowser events={[makeEvent()]} setGoing={setGoing} setSaved={setSaved} />
+      <EventsBrowser
+        events={[makeEvent()]}
+        setGoing={setGoing}
+        setSaved={setSaved}
+        confirmAttendance={confirmAttendance}
+      />
     );
 
     fireEvent.click(screen.getByRole("button", { name: "going" }));
@@ -59,9 +75,15 @@ describe("EventsBrowser RSVP optimistic update", () => {
   it("rolls back the optimistic update and shows an error when the server action fails", async () => {
     const setGoing = vi.fn().mockRejectedValue(new Error("db unavailable"));
     const setSaved = vi.fn();
+    const confirmAttendance = vi.fn();
 
     render(
-      <EventsBrowser events={[makeEvent()]} setGoing={setGoing} setSaved={setSaved} />
+      <EventsBrowser
+        events={[makeEvent()]}
+        setGoing={setGoing}
+        setSaved={setSaved}
+        confirmAttendance={confirmAttendance}
+      />
     );
 
     fireEvent.click(screen.getByRole("button", { name: "going" }));
@@ -80,12 +102,14 @@ describe("EventsBrowser RSVP optimistic update", () => {
   it("toggles going off when clicked while already going", async () => {
     const setGoing = vi.fn().mockResolvedValue(undefined);
     const setSaved = vi.fn();
+    const confirmAttendance = vi.fn();
 
     render(
       <EventsBrowser
         events={[makeEvent({ myGoing: true, goingCount: 1 })]}
         setGoing={setGoing}
         setSaved={setSaved}
+        confirmAttendance={confirmAttendance}
       />
     );
 
@@ -98,9 +122,15 @@ describe("EventsBrowser RSVP optimistic update", () => {
   it("saving a show is independent of going status", async () => {
     const setGoing = vi.fn();
     const setSaved = vi.fn().mockResolvedValue(undefined);
+    const confirmAttendance = vi.fn();
 
     render(
-      <EventsBrowser events={[makeEvent()]} setGoing={setGoing} setSaved={setSaved} />
+      <EventsBrowser
+        events={[makeEvent()]}
+        setGoing={setGoing}
+        setSaved={setSaved}
+        confirmAttendance={confirmAttendance}
+      />
     );
 
     fireEvent.click(screen.getByRole("button", { name: "save" }));
@@ -109,5 +139,155 @@ describe("EventsBrowser RSVP optimistic update", () => {
     expect(setGoing).not.toHaveBeenCalled();
     // Saving doesn't touch the public going count.
     expect(screen.queryByText(/1 going/)).toBeNull();
+  });
+});
+
+describe("EventsBrowser attendance ('I Was There')", () => {
+  afterEach(() => {
+    cleanup();
+    getCurrentLocation.mockReset();
+  });
+
+  it("shows the going button, not I Was There, for an event that hasn't started", () => {
+    render(
+      <EventsBrowser
+        events={[makeEvent({ hasStarted: false })]}
+        setGoing={vi.fn()}
+        setSaved={vi.fn()}
+        confirmAttendance={vi.fn()}
+      />
+    );
+
+    expect(screen.getByRole("button", { name: "going" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /i was there/i })).toBeNull();
+  });
+
+  it("shows an I Was There button instead of going once the event has started", () => {
+    render(
+      <EventsBrowser
+        events={[makeEvent({ hasStarted: true })]}
+        setGoing={vi.fn()}
+        setSaved={vi.fn()}
+        confirmAttendance={vi.fn()}
+      />
+    );
+
+    expect(screen.getByRole("button", { name: /i was there/i })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "going" })).toBeNull();
+  });
+
+  it("shows a confirmed badge instead of the button once attendance is already recorded", () => {
+    render(
+      <EventsBrowser
+        events={[makeEvent({ hasStarted: true, attendedAt: "2026-08-22T10:00:00Z" })]}
+        setGoing={vi.fn()}
+        setSaved={vi.fn()}
+        confirmAttendance={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText(/you were there/i)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /i was there/i })).toBeNull();
+  });
+
+  it("captures a location reading and confirms attendance on tap", async () => {
+    getCurrentLocation.mockResolvedValue({
+      status: "ok",
+      reading: { lat: 1, lng: 2, accuracy: 5, timestamp: Date.now() },
+    });
+    const confirmAttendance = vi.fn().mockResolvedValue({ ok: true });
+
+    render(
+      <EventsBrowser
+        events={[makeEvent({ hasStarted: true })]}
+        setGoing={vi.fn()}
+        setSaved={vi.fn()}
+        confirmAttendance={confirmAttendance}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /i was there/i }));
+
+    await waitFor(() =>
+      expect(confirmAttendance).toHaveBeenCalledWith(
+        "event-1",
+        expect.objectContaining({ lat: 1, lng: 2 })
+      )
+    );
+    await waitFor(() => expect(screen.getByText(/you were there/i)).toBeTruthy());
+  });
+
+  it("shows a clear message and no fallback when location is unavailable", async () => {
+    getCurrentLocation.mockResolvedValue({ status: "denied" });
+    const confirmAttendance = vi.fn().mockResolvedValue({ ok: false, reason: "no_location" });
+
+    render(
+      <EventsBrowser
+        events={[makeEvent({ hasStarted: true })]}
+        setGoing={vi.fn()}
+        setSaved={vi.fn()}
+        confirmAttendance={confirmAttendance}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /i was there/i }));
+
+    await waitFor(() =>
+      expect(confirmAttendance).toHaveBeenCalledWith("event-1", null)
+    );
+    await waitFor(() =>
+      expect(screen.getByText(/location access is needed/i)).toBeTruthy()
+    );
+    // Strict GPS-or-nothing per the captain decision on §10 — no manual
+    // "confirm anyway" option is offered.
+    expect(screen.queryByRole("button", { name: /confirm anyway/i })).toBeNull();
+  });
+
+  it("shows a retryable message when the GPS proximity check fails", async () => {
+    getCurrentLocation.mockResolvedValue({
+      status: "ok",
+      reading: { lat: 50, lng: 50, accuracy: 5, timestamp: Date.now() },
+    });
+    const confirmAttendance = vi.fn().mockResolvedValue({ ok: false, reason: "too_far" });
+
+    render(
+      <EventsBrowser
+        events={[makeEvent({ hasStarted: true })]}
+        setGoing={vi.fn()}
+        setSaved={vi.fn()}
+        confirmAttendance={confirmAttendance}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /i was there/i }));
+
+    await waitFor(() =>
+      expect(screen.getByText(/doesn't look like you're at the venue/i)).toBeTruthy()
+    );
+    // Button remains so the user can retry.
+    expect(screen.getByRole("button", { name: /i was there/i })).toBeTruthy();
+  });
+
+  it("shows a non-retryable message when the event started too long ago for GPS confirmation", async () => {
+    getCurrentLocation.mockResolvedValue({
+      status: "ok",
+      reading: { lat: 1, lng: 2, accuracy: 5, timestamp: Date.now() },
+    });
+    const confirmAttendance = vi.fn().mockResolvedValue({ ok: false, reason: "too_late" });
+
+    render(
+      <EventsBrowser
+        events={[makeEvent({ hasStarted: true })]}
+        setGoing={vi.fn()}
+        setSaved={vi.fn()}
+        confirmAttendance={confirmAttendance}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /i was there/i }));
+
+    await waitFor(() =>
+      expect(screen.getByText(/started too long ago to confirm with gps/i)).toBeTruthy()
+    );
   });
 });

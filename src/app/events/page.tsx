@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import EventsBrowser from "./EventsBrowser";
-import { setGoing, setSaved } from "./actions";
+import { confirmAttendance, setGoing, setSaved } from "./actions";
+import { ATTENDANCE_WINDOW_HOURS } from "./constants";
 import type { EventWithVenue } from "./types";
 
 // MVP is single-scene/single-city, so a fixed display timezone (rather
@@ -26,24 +27,33 @@ export default async function EventsPage() {
     redirect("/login");
   }
 
+  const windowStart = new Date();
+  windowStart.setHours(windowStart.getHours() - ATTENDANCE_WINDOW_HOURS);
+
   const { data: rawEvents } = await supabase
     .from("events")
     .select(
       "id, title, description, start_time, venue:venues(id, name, address, lat, lng)"
     )
-    .gte("start_time", new Date().toISOString())
+    .gte("start_time", windowStart.toISOString())
     .order("start_time", { ascending: true });
 
   const events = rawEvents ?? [];
   const eventIds = events.map((e) => e.id);
 
-  const [countsResult, myRsvpsResult] = await Promise.all([
+  const [countsResult, myRsvpsResult, myAttendanceResult] = await Promise.all([
     eventIds.length
       ? supabase.rpc("event_going_counts", { event_ids: eventIds })
       : Promise.resolve({ data: [] as { event_id: string; count: number }[] }),
     eventIds.length
       ? supabase.from("rsvps").select("event_id, going, saved").in("event_id", eventIds)
       : Promise.resolve({ data: [] as { event_id: string; going: boolean; saved: boolean }[] }),
+    eventIds.length
+      ? supabase
+          .from("attendance")
+          .select("event_id, confirmed_at")
+          .in("event_id", eventIds)
+      : Promise.resolve({ data: [] as { event_id: string; confirmed_at: string }[] }),
   ]);
 
   const goingCountByEvent = new Map<string, number>();
@@ -56,6 +66,12 @@ export default async function EventsPage() {
     myRsvpByEvent.set(row.event_id, { going: row.going, saved: row.saved });
   }
 
+  const myAttendanceByEvent = new Map<string, string>();
+  for (const row of myAttendanceResult.data ?? []) {
+    myAttendanceByEvent.set(row.event_id, row.confirmed_at);
+  }
+
+  const now = new Date();
   const eventsWithMeta: EventWithVenue[] = events
     .filter((e) => e.venue)
     .map((e) => ({
@@ -68,6 +84,8 @@ export default async function EventsPage() {
       goingCount: goingCountByEvent.get(e.id) ?? 0,
       myGoing: myRsvpByEvent.get(e.id)?.going ?? false,
       mySaved: myRsvpByEvent.get(e.id)?.saved ?? false,
+      hasStarted: new Date(e.start_time) <= now,
+      attendedAt: myAttendanceByEvent.get(e.id) ?? null,
     }));
 
   return (
@@ -75,6 +93,7 @@ export default async function EventsPage() {
       events={eventsWithMeta}
       setGoing={setGoing}
       setSaved={setSaved}
+      confirmAttendance={confirmAttendance}
     />
   );
 }

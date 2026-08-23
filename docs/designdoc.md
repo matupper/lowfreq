@@ -345,16 +345,16 @@ appear in their invite tree once registration completes.
 
 ## 6. Data model
 
-Full schema lives in `db/schema.sql`. Summary of the five core tables
+Full schema lives in `db/schema.sql`. Summary of the six core tables
 and why each exists:
 
 - **users** — id matches Supabase `auth.users.id` directly (no
   separate identity record). `invited_by` links back to the `invites`
   row that let them in, forming the invite tree.
-- **invites** — token, status (unused/used/expired), and an
+- **invites** — token, status (unused/used/expired/revoked), and an
   `expires_at` column that's unenforced in Phase 1 and enforced in
-  Phase 2. Designed so Phase 2 tightens existing checks rather than
-  requiring new columns.
+  Phase 3, along with the `lat`/`lng` columns location verification
+  needs (see §9 Phase 3).
 - **venues** — `owner_id` is nullable; most MVP venues are unclaimed
   locations, not accounts. Claiming becomes a feature later. *(Future)*
   a claim also carries a `status` (`pending`/`approved`/`rejected`),
@@ -369,6 +369,11 @@ and why each exists:
   practice going/not-going with a separate independent Save covers the
   same ground more simply and maps more directly to what the headcount
   actually needs to count.
+- **attendance** — records a confirmed "I Was There," kept deliberately
+  separate from `rsvps`: `user_id`, `event_id`, `confirmed_at`, and a
+  `method` (`gps` or `venue_qr`, though only `gps` is produced until the
+  venue check-in QR ships in Phase 4) — going and actually-having-gone
+  are different facts and neither should overwrite the other.
 
 ### 6.1 Future entities (not yet in `schema.sql`)
 
@@ -391,24 +396,12 @@ Sketched here for planning purposes — not final column lists:
   be columns on `users` or a separate `user_profiles` table; worth
   deciding once the actual data shape (single values vs. lists) is
   clearer.
-- **attendance** — records a confirmed "I Was There," separate from
-  `rsvps`. Likely: `user_id`, `event_id`, `confirmed_at`, and a method
-  (`gps` or `venue_qr`) — kept separate from RSVP intentionally, since
-  going and actually-having-gone are different facts and shouldn't
-  overwrite each other (someone can RSVP going, not show up, and the
-  record should reflect that honestly rather than assuming
-  attendance).
 - **invites, extended** — venue-issued codes reuse the `invites` table
   rather than becoming a new one, with a couple of differences from
   peer stamps: a `venue_id` (nullable — null means a normal peer
   invite), an `event_id` it's tied to, and a `reusable` flag, since a
   printed poster gets scanned by many people over a show rather than
   once by one person.
-- **location verification (shared capability, not a table)** — the
-  "was this device physically near this point, recently" check that
-  both strict invite scanning and "I Was There" depend on. Worth
-  designing as one reusable piece (a function/service both features
-  call) rather than building it twice.
 - **music_connections** — one row per user per provider: `provider`
   (spotify/apple_music), `access_token`, `refresh_token`,
   `expires_at`, `visible` (the pause/hide toggle). RLS should restrict
@@ -471,13 +464,13 @@ Demoable, even without the invite system working yet.
 the MVP.
 
 ### Phase 3 — Location verification (invites + attendance)
-- [ ] Build the shared "is this device near this point right now"
-      capability once — both features below consume it
-- [ ] Add `expires_at` enforcement (short-lived invite tokens)
-- [ ] Add GPS proximity check at invite scan time
-- [ ] `attendance` table + "I Was There" confirmation flow at events
-- [ ] Handle edge cases: expired token UX, revoking an unused invite,
-      what happens if location permission is denied for attendance
+- [x] Build the shared "is this device near this point right now"
+      capability once — both features below consume it (src/lib/location.ts)
+- [x] Add `expires_at` enforcement (short-lived invite tokens)
+- [x] Add GPS proximity check at invite scan time
+- [x] `attendance` table + "I Was There" confirmation flow at events
+- [x] Handle edge cases: expired token UX, revoking an unused invite,
+      and location permission denied/GPS failure for attendance (see §10)
 
 ### Phase 4 — Opening up posting
 - [ ] User-submitted events (currently admin/seed-only), entering as
@@ -519,9 +512,12 @@ Things worth deciding before the phase that needs them, not before:
 - For "I Was There": if location permission is denied or a GPS check
   fails for a legitimate reason (e.g. bad signal in a basement venue —
   genuinely plausible for this app), is there a manual fallback, or is
-  it strictly GPS-or-nothing? The venue-printed QR (§3.1) gives this a
-  natural answer for events at venues that generate one, but not every
-  show will have one, so this still needs a decision for the rest.
+  it strictly GPS-or-nothing? **Decided (Phase 3):** strictly
+  GPS-or-nothing, no manual fallback — see `confirmAttendance` in
+  src/app/events/actions.ts. Revisit once the venue-printed QR (§3.1,
+  Phase 4) ships, since that gives bad-signal venues a real alternative
+  confirmation path (`attendance.method = 'venue_qr'`) without weakening
+  what a GPS-based "I Was There" claims to verify.
 - Venue-issued registration is a real loophole in the exclusivity
   model worth being honest about: a well-attended show could let
   dozens of strangers self-register from one poster in one night,

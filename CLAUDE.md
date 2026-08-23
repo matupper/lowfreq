@@ -29,17 +29,45 @@ Display: Anton (all-caps by nature — lean into it, don't fight it with
 mixed-case headlines elsewhere). Body: Inter. Metadata/timestamps/stubs:
 IBM Plex Mono. Accent (stamp moments only): Special Elite.
 
-## Invite system — token model, don't tighten early
+## Invite system — token model
 Invite generation, scanning, gated registration, the onboarding gate,
 and the invite tree are built — see docs/designdoc.md §9 (Phase 2) for
-the checklist. Current token model: single-use, no expiry enforced, no
-location check. Still creates a real invite tree via
-users.invited_by → invites.id.
+the checklist. Current token model: single-use, expires after
+`INVITE_EXPIRY_MINUTES` (src/lib/invites.ts, currently 5 min), enforced
+server-side in `redeem_invite`/`invite_lookup_status` (db/schema.sql).
+Still creates a real invite tree via users.invited_by → invites.id.
 
-Location-verified, time-limited tokens (docs/designdoc.md §9 Phase 3)
-are the next tightening — don't build yet. The schema already supports
-this (expires_at column exists, unused for now) — this is meant to be a
-tightening of existing checks, not a rewrite.
+Location-verified tokens (docs/designdoc.md §9 Phase 3) are built:
+`invites.lat`/`lng` capture the inviter's device position at generation
+time (best-effort — a missing location doesn't block generation), and
+the invitee's position is checked against it at registration submit via
+the shared proximity capability below. A missing reading on either side
+degrades gracefully to expiry-only enforcement rather than blocking the
+only path into the app — this was a judgment call, not a spec
+requirement, so revisit it if abuse patterns show up in practice.
+
+## Shared location capability
+`src/lib/location.ts` (`checkProximity`/`haversineDistanceMeters`) is the
+one "is this device physically near this point right now" check per
+docs/designdoc.md §6.1 — both invite scanning and "I Was There"
+attendance confirmation call it rather than each doing their own
+distance/recency math. `src/lib/geolocation-client.ts` wraps the browser
+Geolocation API for client components that need to capture a reading.
+
+## Attendance ("I Was There")
+The `attendance` table (docs/designdoc.md §6.1) is built and
+deliberately independent of `rsvps` — confirming attendance never reads
+or writes going/saved, and vice versa. GPS-based confirmation
+(`confirmAttendance` in src/app/events/actions.ts) is live.
+
+If location permission is denied or a GPS fix fails, confirmation is
+strictly GPS-or-nothing — no manual fallback (docs/designdoc.md §10,
+captain decision). This was chosen deliberately, not a stopgap to
+revisit casually: revisit specifically once the venue-printed check-in
+QR (§3.1, Phase 4) ships, since that gives bad-signal venues (e.g. a
+basement show) a real alternative confirmation path
+(`attendance.method = 'venue_qr'`) without weakening what a GPS-based
+confirmation claims to verify.
 
 ## Data model notes
 - public.users.id is the SAME id as auth.users.id (Supabase Auth), linked
@@ -54,9 +82,11 @@ tightening of existing checks, not a rewrite.
   a venue is a later feature, not MVP.
 
 ## Build order
-Auth, event browse/RSVP, and invite gating (generation, scanning, gated
-registration, onboarding gate, invite tree) are all built. For what's
-next, see docs/designdoc.md §9 (Phase 3 onward).
+Auth, event browse/RSVP, invite gating, and location verification
+(expiry enforcement, GPS-checked invites, attendance/"I Was There") are
+all built, including the attendance denied-location decision (see
+"Attendance" above). For what's next, see docs/designdoc.md §9 (Phase 4
+onward).
 
 ## Copy voice
 Blunt, factual, not corporate. "You don't just sign up, someone lets you

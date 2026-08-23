@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { formatInviteToken } from "@/lib/invites";
+import { effectiveInviteStatus, formatInviteToken } from "@/lib/invites";
 import ThemeToggle from "@/components/ThemeToggle";
+import GenerateInviteButton from "@/components/GenerateInviteButton";
 import { signOut } from "@/app/home/actions";
-import { createInvite } from "./actions";
+import { revokeInvite } from "./invite/actions";
 
 const SCENE_TIMEZONE = "America/Los_Angeles";
 const timeFormatter = new Intl.DateTimeFormat("en-US", {
@@ -18,6 +19,7 @@ type InviteTreeRow = {
   invite_id: string;
   token: string;
   status: string;
+  expires_at: string | null;
   created_at: string;
   invitee_id: string | null;
   invitee_name: string | null;
@@ -90,37 +92,45 @@ export default async function ProfilePage() {
             invites
           </h2>
         </div>
-        <form action={createInvite}>
-          <button
-            type="submit"
-            className="bg-ink text-btn-on-ink rounded-[2px] py-3.5 text-sm font-medium w-full"
-          >
-            Stamp a new invite
-          </button>
-        </form>
+        <GenerateInviteButton />
 
         {tree.length > 0 && (
           <ul className="flex flex-col gap-2 pt-2">
-            {tree.map((row) => (
-              <li
-                key={row.invite_id}
-                className="flex items-center justify-between border-b border-line py-2 last:border-none"
-              >
-                <span className="font-mono text-xs text-kraft">
-                  {formatInviteToken(row.token)}
-                </span>
-                {row.invitee_name ? (
-                  <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-kraft border border-riso-pink rounded-full px-2.5 py-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-riso-pink" />
-                    {row.invitee_name} joined
+            {tree.map((row) => {
+              const status = effectiveInviteStatus(row.status, row.expires_at);
+              return (
+                <li
+                  key={row.invite_id}
+                  className="flex items-center justify-between border-b border-line py-2 last:border-none gap-2"
+                >
+                  <span className="font-mono text-xs text-kraft">
+                    {formatInviteToken(row.token)}
                   </span>
-                ) : (
-                  <span className="font-mono text-[11px] text-kraft">
-                    not redeemed yet
-                  </span>
-                )}
-              </li>
-            ))}
+                  {row.invitee_name ? (
+                    <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-kraft border border-riso-pink rounded-full px-2.5 py-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-riso-pink" />
+                      {row.invitee_name} joined
+                    </span>
+                  ) : status === "unused" ? (
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-[11px] text-kraft">
+                        not redeemed yet
+                      </span>
+                      <form action={revokeInvite.bind(null, row.invite_id)}>
+                        <button
+                          type="submit"
+                          className="font-mono text-[11px] text-kraft underline underline-offset-2"
+                        >
+                          revoke
+                        </button>
+                      </form>
+                    </div>
+                  ) : (
+                    <span className="font-mono text-[11px] text-kraft">{status}</span>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>
