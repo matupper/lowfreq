@@ -267,4 +267,27 @@ describe("EventsBrowser attendance ('I Was There')", () => {
     // Button remains so the user can retry.
     expect(screen.getByRole("button", { name: /i was there/i })).toBeTruthy();
   });
+
+  it("shows a non-retryable message when the event started too long ago for GPS confirmation", async () => {
+    getCurrentLocation.mockResolvedValue({
+      status: "ok",
+      reading: { lat: 1, lng: 2, accuracy: 5, timestamp: Date.now() },
+    });
+    const confirmAttendance = vi.fn().mockResolvedValue({ ok: false, reason: "too_late" });
+
+    render(
+      <EventsBrowser
+        events={[makeEvent({ hasStarted: true })]}
+        setGoing={vi.fn()}
+        setSaved={vi.fn()}
+        confirmAttendance={confirmAttendance}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /i was there/i }));
+
+    await waitFor(() =>
+      expect(screen.getByText(/started too long ago to confirm with gps/i)).toBeTruthy()
+    );
+  });
 });

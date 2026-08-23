@@ -1,4 +1,4 @@
--- lowfreq — full schema (v3)
+-- lowfreq — full schema (v4)
 -- Safe to re-run: drops existing tables/trigger first, then recreates everything.
 -- Run this in the Supabase SQL editor.
 --
