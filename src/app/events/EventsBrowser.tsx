@@ -210,6 +210,7 @@ function AttendanceMessage({ result }: { result: ConfirmAttendanceResult }) {
   if (result.ok) return null;
   const message: Record<Extract<ConfirmAttendanceResult, { ok: false }>["reason"], string> = {
     not_started: "This show hasn't started yet.",
+    too_late: "This show started too long ago to confirm with GPS.",
     too_far: "Doesn't look like you're at the venue — try again if you are.",
     stale: "Your location reading was too old — try again.",
     // Strict GPS-or-nothing, no manual fallback — captain decision on the

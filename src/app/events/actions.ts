@@ -9,6 +9,13 @@ function isEventId(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
 }
 
+// "I Was There" only makes sense while someone could plausibly still be at
+// (or just leaving) the venue — a live GPS check can't confirm attendance
+// at a show from last month. Shared with events/page.tsx's browse query so
+// the window that decides which events show the button matches the window
+// the mutation itself enforces.
+export const ATTENDANCE_WINDOW_HOURS = 6;
+
 // Going and saved are independent booleans on the same row (see
 // docs/designdoc.md §6) — toggling one must not clobber the other. That
 // read-modify-write happens atomically in the set_rsvp_going/set_rsvp_saved
@@ -55,7 +62,10 @@ export async function setSaved(eventId: string, saved: boolean) {
 
 export type ConfirmAttendanceResult =
   | { ok: true }
-  | { ok: false; reason: "not_started" | "too_far" | "stale" | "no_location" | "error" };
+  | {
+      ok: false;
+      reason: "not_started" | "too_late" | "too_far" | "stale" | "no_location" | "error";
+    };
 
 // "I Was There" (docs/designdoc.md §6.1, §9 Phase 3) — deliberately
 // separate from RSVP: a user can confirm attendance whether or not they
@@ -92,8 +102,15 @@ export async function confirmAttendance(
   if (!event) {
     return { ok: false, reason: "error" };
   }
-  if (new Date(event.start_time) > new Date()) {
+  const startTime = new Date(event.start_time);
+  const now = new Date();
+  if (startTime > now) {
     return { ok: false, reason: "not_started" };
+  }
+  const windowStart = new Date(now);
+  windowStart.setHours(windowStart.getHours() - ATTENDANCE_WINDOW_HOURS);
+  if (startTime < windowStart) {
+    return { ok: false, reason: "too_late" };
   }
 
   if (!reading) {

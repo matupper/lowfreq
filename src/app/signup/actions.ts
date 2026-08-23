@@ -19,9 +19,18 @@ export type RegisterState =
 // rendering the form). Malformed/partial values are treated the same as
 // "no reading" rather than as an error.
 function readingFromForm(formData: FormData): GeoReading | null {
-  const lat = Number(formData.get("lat"));
-  const lng = Number(formData.get("lng"));
-  const timestamp = Number(formData.get("locationTimestamp"));
+  const latRaw = formData.get("lat");
+  const lngRaw = formData.get("lng");
+  const timestampRaw = formData.get("locationTimestamp");
+  // RegisterForm submits "" (not omitting the field) when it couldn't get a
+  // fix, and Number("") is 0 — which Number.isFinite happily accepts — so
+  // empty strings must be rejected before the numeric coercion below.
+  if (latRaw === "" || lngRaw === "" || timestampRaw === "") {
+    return null;
+  }
+  const lat = Number(latRaw);
+  const lng = Number(lngRaw);
+  const timestamp = Number(timestampRaw);
   if (!Number.isFinite(lat) || !Number.isFinite(lng) || !Number.isFinite(timestamp)) {
     return null;
   }

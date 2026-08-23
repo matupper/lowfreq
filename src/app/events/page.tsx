@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import EventsBrowser from "./EventsBrowser";
-import { confirmAttendance, setGoing, setSaved } from "./actions";
+import { ATTENDANCE_WINDOW_HOURS, confirmAttendance, setGoing, setSaved } from "./actions";
 import type { EventWithVenue } from "./types";
 
 // MVP is single-scene/single-city, so a fixed display timezone (rather
@@ -15,13 +15,6 @@ const timeFormatter = new Intl.DateTimeFormat("en-US", {
   hour: "numeric",
   minute: "2-digit",
 });
-
-// "I Was There" only makes sense while someone could plausibly still be at
-// (or just leaving) the venue — a live GPS check can't confirm attendance
-// at a show from last month. Widening the query by this much keeps
-// recently-started events visible long enough to confirm, without turning
-// this into a full past-events archive (out of scope for this phase).
-const ATTENDANCE_WINDOW_HOURS = 6;
 
 export default async function EventsPage() {
   const supabase = await createClient();
