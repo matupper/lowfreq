@@ -203,6 +203,52 @@ describe("EventMap", () => {
     expect(screen.queryByText("Basement Show")).toBeNull();
   });
 
+  it("doesn't re-fly/reopen a stale focus target when focusedEventId is nulled and restored without a new focusNonce", async () => {
+    const events = [
+      makeEvent({ id: "event-1", venue: { id: "venue-1", name: "The Basement", address: null, lat: 45.5, lng: -122.6 } }),
+      makeEvent({
+        id: "event-2",
+        title: "Warehouse Set",
+        venue: { id: "venue-2", name: "Kelly's Garage", address: null, lat: 45.55, lng: -122.67 },
+      }),
+    ];
+    const setGoing = vi.fn();
+    const setSaved = vi.fn();
+    const onConfirmAttendance = vi.fn();
+    const onViewInList = vi.fn();
+    const baseProps = {
+      events,
+      setGoing,
+      setSaved,
+      attendanceStatus: {},
+      onConfirmAttendance,
+      onViewInList,
+    };
+
+    // "view on map" on event-1: flies to and opens its card.
+    const { rerender } = render(
+      <EventMap {...baseProps} focusedEventId="event-1" focusNonce={1} />
+    );
+    await waitFor(() => expect(screen.getByText("Basement Show")).toBeTruthy());
+
+    // User manually navigates to a different pin (event-2) on the map.
+    const otherPin = await waitFor(() => screen.getByRole("button", { name: "Kelly's Garage" }));
+    fireEvent.click(otherPin);
+    await waitFor(() => expect(screen.getByText("Warehouse Set")).toBeTruthy());
+
+    // Switching to the list tab nulls focusedEventId (same focusNonce).
+    rerender(<EventMap {...baseProps} focusedEventId={null} focusNonce={1} />);
+
+    // Switching back to the map tab via the plain toggle restores the
+    // previous focusedEventId value, but with the *same* focusNonce as
+    // before — this must not re-trigger the fly-to/open-card effect and
+    // silently discard the manual navigation to event-2.
+    rerender(<EventMap {...baseProps} focusedEventId="event-1" focusNonce={1} />);
+
+    expect(screen.getByText("Warehouse Set")).toBeTruthy();
+    expect(screen.queryByText("Basement Show")).toBeNull();
+  });
+
   it("cycles between multiple shows at the same venue from within the card", async () => {
     const venue = { id: "venue-1", name: "The Basement", address: null, lat: 45.5, lng: -122.6 };
     const events = [
