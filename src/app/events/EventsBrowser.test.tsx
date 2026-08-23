@@ -1,12 +1,104 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import EventsBrowser from "./EventsBrowser";
 import type { EventWithVenue } from "./types";
+
+// jsdom doesn't implement scrollIntoView — EventsBrowser's "scroll to the
+// focused event" effect (used by the map's "view in list" jump) calls it,
+// so stub it for this file's tests.
+HTMLElement.prototype.scrollIntoView = vi.fn();
 
 const getCurrentLocation = vi.fn();
 vi.mock("@/lib/geolocation-client", () => ({
   getCurrentLocation: (...args: unknown[]) => getCurrentLocation(...args),
 }));
+
+// jsdom has no WebGL/canvas support, so the real maplibre-gl (loaded by
+// EventMap, which EventsBrowser pulls in via next/dynamic) can't run in
+// tests — see the fuller version of this mock's reasoning in
+// EventMap.test.tsx. Defined inline since vi.mock is hoisted.
+vi.mock("maplibre-gl", () => {
+  type Listener = () => void;
+
+  class FakeMap {
+    _container: HTMLElement;
+    _loadListeners: Listener[] = [];
+    constructor(opts: { container: HTMLElement }) {
+      this._container = opts.container;
+      queueMicrotask(() => this._loadListeners.forEach((l) => l()));
+    }
+    addControl() {
+      return this;
+    }
+    on(event: string, cb: Listener) {
+      if (event === "load") this._loadListeners.push(cb);
+      return this;
+    }
+    jumpTo() {}
+    fitBounds() {}
+    flyTo() {}
+    getZoom() {
+      return 12;
+    }
+    setStyle() {}
+    remove() {}
+  }
+
+  class FakeMarker {
+    _element: HTMLElement;
+    constructor(opts: { element: HTMLElement }) {
+      this._element = opts.element;
+    }
+    setLngLat() {
+      return this;
+    }
+    addTo(map: FakeMap) {
+      map._container.appendChild(this._element);
+      return this;
+    }
+    remove() {
+      this._element.remove();
+    }
+  }
+
+  class FakePopup {
+    _element: HTMLElement | null = null;
+    _closeListeners: Listener[] = [];
+    setLngLat() {
+      return this;
+    }
+    setDOMContent(el: HTMLElement) {
+      this._element = el;
+      return this;
+    }
+    addTo(map: FakeMap) {
+      if (this._element) map._container.appendChild(this._element);
+      return this;
+    }
+    on(event: string, cb: Listener) {
+      if (event === "close") this._closeListeners.push(cb);
+      return this;
+    }
+    remove() {
+      if (this._element?.parentNode) {
+        this._element.remove();
+        this._closeListeners.forEach((l) => l());
+      }
+    }
+  }
+
+  return {
+    MapLibreMap: FakeMap,
+    Marker: FakeMarker,
+    Popup: FakePopup,
+    NavigationControl: class {},
+    LngLatBounds: class {
+      extend() {
+        return this;
+      }
+    },
+  };
+});
 
 function makeEvent(overrides: Partial<EventWithVenue> = {}): EventWithVenue {
   return {
@@ -289,5 +381,52 @@ describe("EventsBrowser attendance ('I Was There')", () => {
     await waitFor(() =>
       expect(screen.getByText(/started too long ago to confirm with gps/i)).toBeTruthy()
     );
+  });
+});
+
+describe("EventsBrowser list <-> map navigation", () => {
+  afterEach(() => cleanup());
+
+  it("jumps from a list card to that event's pin on the map", async () => {
+    render(
+      <EventsBrowser
+        events={[makeEvent()]}
+        setGoing={vi.fn()}
+        setSaved={vi.fn()}
+        confirmAttendance={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "view on map" }));
+
+    // Map tab is now active and the event's card is already expanded —
+    // not just a blank map or a switched tab with no context.
+    await waitFor(() => expect(screen.getAllByText("Basement Show").length).toBeGreaterThan(0));
+    expect(screen.getByRole("button", { name: "map" }).className).toContain("bg-ink");
+  });
+
+  it("jumps from the map's expanded card back to the matching list card", async () => {
+    render(
+      <EventsBrowser
+        events={[makeEvent()]}
+        setGoing={vi.fn()}
+        setSaved={vi.fn()}
+        confirmAttendance={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "view on map" }));
+    const viewInList = await waitFor(() => screen.getByRole("button", { name: "view in list" }));
+    fireEvent.click(viewInList);
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "list" }).className).toContain("bg-ink")
+    );
+    // The map view stays mounted (just hidden) in the background so its
+    // camera/popup state survives tab switches — scope to the list card
+    // specifically (by its id) rather than asserting on the whole document,
+    // since the map's own copy of this event's card is still in the DOM.
+    const listCard = document.getElementById("event-event-1")!;
+    expect(within(listCard).getByRole("button", { name: "going" })).toBeTruthy();
   });
 });

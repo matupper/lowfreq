@@ -82,6 +82,7 @@ timestamps are set in IBM Plex Mono.
 - **Styling:** Tailwind CSS v4, custom design tokens (see
   `src/app/globals.css`)
 - **Database/auth:** Supabase (Postgres + Auth, RLS enabled)
+- **Map:** maplibre-gl with CARTO's free basemaps (no API key needed)
 - **Hosting:** Vercel (frontend) + Supabase (database)
 
 ## Running it locally

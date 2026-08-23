@@ -49,3 +49,50 @@ body {
   font-family: var(--font-sans), sans-serif;
   transition: background 0.15s ease, color 0.15s ease;
 }
+
+/* Event map (src/app/events/EventMap.tsx) — restyle maplibre-gl's stock
+   white-bubble chrome to match the paper/ink motif instead. Scoped under
+   .lowfreq-map since these are global class names owned by the library. */
+.lowfreq-map .maplibregl-popup-content {
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+  border-radius: 2px;
+}
+.lowfreq-map .maplibregl-popup-tip {
+  display: none;
+}
+.lowfreq-map .maplibregl-popup-close-button {
+  font-family: var(--font-plex-mono), monospace;
+  font-size: 16px;
+  color: var(--kraft);
+  right: 4px;
+  top: 2px;
+}
+.lowfreq-map .maplibregl-popup-close-button:hover {
+  color: var(--ink);
+  background: transparent;
+}
+.lowfreq-map .maplibregl-ctrl-group {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  box-shadow: none;
+}
+.lowfreq-map .maplibregl-ctrl-group button + button {
+  border-top: 1px solid var(--line);
+}
+.lowfreq-map .maplibregl-ctrl-icon {
+  filter: invert(1);
+}
+[data-theme="light"] .lowfreq-map .maplibregl-ctrl-icon {
+  filter: none;
+}
+.lowfreq-map .maplibregl-ctrl-attrib {
+  background: color-mix(in srgb, var(--surface) 85%, transparent);
+  color: var(--kraft);
+  border-radius: 2px 0 0 0;
+}
+.lowfreq-map .maplibregl-ctrl-attrib a {
+  color: var(--kraft);
+}
