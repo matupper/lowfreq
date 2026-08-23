@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { SESSION_COOKIE_MAX_AGE_SECONDS } from "@/lib/supabase/cookie-options";
 
 const PROTECTED_PATHS = ["/home", "/events", "/profile"];
 
@@ -19,8 +20,19 @@ export async function proxy(request: NextRequest) {
             request.cookies.set(name, value)
           );
           response = NextResponse.next({ request });
+          // @supabase/ssr hardcodes maxAge to its own 400-day default
+          // internally regardless of any cookieOptions passed to
+          // createServerClient (verified against the installed version), so
+          // the session-length override has to happen here instead, on
+          // every cookie this refreshes — this runs on every request to a
+          // protected path, not just login.
           cookiesToSet.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, options)
+            response.cookies.set(name, value, {
+              ...options,
+              ...(options.maxAge
+                ? { maxAge: SESSION_COOKIE_MAX_AGE_SECONDS }
+                : {}),
+            })
           );
         },
       },

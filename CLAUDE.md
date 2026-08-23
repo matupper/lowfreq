@@ -100,6 +100,13 @@ all built, including the attendance denied-location decision (see
 "Attendance" above). For what's next, see docs/designdoc.md §9 (Phase 4
 onward).
 
+Signed-in sessions persist across browser restarts (~90 days) via a
+`maxAge` override on the Supabase session cookie — see
+`src/lib/supabase/cookie-options.ts` and AGENTS.md's note on
+`@supabase/ssr`'s `cookieOptions.maxAge` being a no-op in the installed
+version. This does not change how someone gets authenticated in the first
+place — the invite gate in "Invite system" above is untouched.
+
 ## Copy voice
 Blunt, factual, not corporate. "You don't just sign up, someone lets you
 in" — states how the product works rather than selling it.
