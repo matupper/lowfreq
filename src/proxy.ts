@@ -29,7 +29,9 @@ export async function proxy(request: NextRequest) {
           cookiesToSet.forEach(({ name, value, options }) =>
             response.cookies.set(name, value, {
               ...options,
-              maxAge: SESSION_COOKIE_MAX_AGE_SECONDS,
+              ...(options.maxAge
+                ? { maxAge: SESSION_COOKIE_MAX_AGE_SECONDS }
+                : {}),
             })
           );
         },

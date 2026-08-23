@@ -66,4 +66,29 @@ describe("createClient session cookie maxAge", () => {
     // 90 days, not @supabase/ssr's 400-day default.
     expect(SESSION_COOKIE_MAX_AGE_SECONDS).toBe(60 * 60 * 24 * 90);
   });
+
+  it("passes through @supabase/ssr's maxAge: 0 deletion signal on sign-out instead of reviving the cookie", async () => {
+    await createClient();
+
+    // @supabase/ssr's signOut() calls setAll with maxAge: 0 to delete the
+    // cookie, distinct from a real session write, which always carries a
+    // truthy maxAge.
+    setAllCookies([
+      {
+        name: "sb-project-auth-token",
+        value: "",
+        options: { path: "/", sameSite: "lax", maxAge: 0 },
+      },
+    ]);
+
+    expect(cookieStoreSet).toHaveBeenCalledWith(
+      "sb-project-auth-token",
+      "",
+      expect.objectContaining({
+        path: "/",
+        sameSite: "lax",
+        maxAge: 0,
+      })
+    );
+  });
 });

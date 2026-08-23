@@ -27,7 +27,9 @@ export async function createClient() {
             cookiesToSet.forEach(({ name, value, options }) =>
               cookieStore.set(name, value, {
                 ...options,
-                maxAge: SESSION_COOKIE_MAX_AGE_SECONDS,
+                ...(options.maxAge
+                  ? { maxAge: SESSION_COOKIE_MAX_AGE_SECONDS }
+                  : {}),
               })
             );
           } catch {
