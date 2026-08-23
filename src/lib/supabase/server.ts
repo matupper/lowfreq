@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { SESSION_COOKIE_MAX_AGE_SECONDS } from "./cookie-options";
 
 // Server-side Supabase client for use in Server Components, Server
 // Actions, and Route Handlers. Reads/writes the session via the request's
@@ -17,8 +18,17 @@ export async function createClient() {
         },
         setAll(cookiesToSet) {
           try {
+            // @supabase/ssr hardcodes maxAge to its own 400-day default
+            // internally and ignores a `cookieOptions.maxAge` passed to
+            // createServerClient (verified against the installed version),
+            // so the only place this app can actually control session
+            // length is by overriding it here, on the options it already
+            // computed for every other cookie attribute.
             cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
+              cookieStore.set(name, value, {
+                ...options,
+                maxAge: SESSION_COOKIE_MAX_AGE_SECONDS,
+              })
             );
           } catch {
             // Called from a Server Component render, where cookies can't
