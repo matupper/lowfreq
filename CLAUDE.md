@@ -69,6 +69,18 @@ basement show) a real alternative confirmation path
 (`attendance.method = 'venue_qr'`) without weakening what a GPS-based
 confirmation claims to verify.
 
+## Event map
+Map view (src/app/events/EventMap.tsx) is a core/flagship feature, not
+a placeholder or lower-priority phase-1 leftover — see docs/designdoc.md
+§4.5 and the note in §3. Built on maplibre-gl with CARTO's free
+dark-matter/positron basemaps (no API key required; style swaps with
+the dark/light toggle). `EventCard` (src/app/events/EventCard.tsx) is
+shared between list and map views so RSVP/save behave identically in
+both places; the map expands a pin into that same card in place rather
+than navigating away. Both views can jump to the other's matching card
+("view on map" from a list card, "view in list" from the map's
+expanded card).
+
 ## Data model notes
 - public.users.id is the SAME id as auth.users.id (Supabase Auth), linked
   via a foreign key + trigger (handle_new_user). Never manually insert

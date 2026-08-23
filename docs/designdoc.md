@@ -66,6 +66,13 @@ app grows:
 | Profile | View your own invite tree (who you invited), your going/saved shows |
 | Dark/light theme toggle | Dark is default; persisted per user |
 
+*Note: the map view was originally sequenced as "build the list first,
+map second, whenever there's time" (see Phase 1 in the development
+plan). The captain has since redirected priority on this — the map is a
+core/flagship feature, not a lower-priority leftover, since nearby pins
+are the thing that visually sells the "local scene" concept. See §4.5
+and Phase 1 for the current spec and status.*
+
 ### Phase 2 (after MVP is stable)
 | Feature | Description |
 |---|---|
@@ -245,6 +252,23 @@ toggle to switch to list view. Filter by date range at minimum for
 MVP; genre/tag filtering can come later once there's enough event
 volume to need it.
 
+**Map view is a core/flagship feature** (captain-redirected priority —
+see the note in §3), not a secondary/placeholder view: nearby event
+pins are the thing that visually sells "here's what's happening around
+you." Current spec, as built:
+- Venues are plotted as pins on a real map (maplibre-gl + CARTO's free
+  dark-matter/positron basemaps — dark by default, swaps with the
+  dark/light toggle, no API key required; see the note in §7).
+- Tapping a pin expands it **in place** into the same event card
+  component used in list view — not a navigation away from the map.
+  RSVP (going) and save work directly from that expanded card. A venue
+  with multiple shows exposes a small prev/next cycle within the card
+  rather than needing repeated pin taps.
+- The expanded card has a "view in list" action that switches to list
+  view and scrolls to that exact event.
+- List view's cards have the reverse action, "view on map" — switches
+  to map view, flies the camera to that event's venue, and opens its
+  card.
 - **State:** no events nearby → don't show an empty map silently;
   explain the app is invite-only/early and sparse by design, rather
   than reading as broken.
@@ -418,6 +442,10 @@ Sketched here for planning purposes — not final column lists:
 - **Styling:** Tailwind CSS v4, custom design tokens (see style guide)
 - **Auth/database:** Supabase (Postgres + Auth)
 - **Hosting:** Vercel
+- **Map (event browse):** maplibre-gl, styled with CARTO's free
+  dark-matter/positron basemaps — chosen specifically because it needs
+  no API key/credential to run. Revisit for a licensed Mapbox/MapTiler
+  style (with support behind it) if usage outgrows CARTO's free tier.
 
 ## 8. Design system (summary)
 
@@ -445,7 +473,11 @@ depend on a later, harder stage being finished first.
 ### Phase 1 — Core loop (current)
 - [ ] Email/password auth (signup/login, no invite gate yet)
 - [ ] Seed test venues/events directly in Supabase
-- [ ] Event feed — list view first, map view second
+- [x] Event feed — list view
+- [x] Event feed — map view (originally sequenced "second," but
+      captain-redirected to a core/flagship feature — see §3, §4.5:
+      real pin map, tap-to-expand event card with inline RSVP/save, and
+      a two-way jump to/from the matching list-view card)
 - [ ] Event detail screen
 - [ ] RSVP + Save, writing to `rsvps`
 - [x] Profile screen showing a user's own RSVPs/saves

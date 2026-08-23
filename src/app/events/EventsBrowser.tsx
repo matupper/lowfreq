@@ -2,11 +2,24 @@
 
 import { useEffect, useOptimistic, useState, useTransition } from "react";
 import Link from "next/link";
-import EventMap from "./EventMap";
+import dynamic from "next/dynamic";
+import EventCard from "./EventCard";
 import type { EventWithVenue } from "./types";
 import { getCurrentLocation } from "@/lib/geolocation-client";
 import type { GeoReading } from "@/lib/location";
 import type { ConfirmAttendanceResult } from "./actions";
+
+// maplibre-gl reaches for `window`/canvas at module load — keep it out of
+// the server bundle and only pull it in once someone actually opens the
+// map tab, not on every list-view page load.
+const EventMap = dynamic(() => import("./EventMap"), {
+  ssr: false,
+  loading: () => (
+    <p className="font-mono text-xs text-kraft py-10 text-center">
+      loading map…
+    </p>
+  ),
+});
 
 // -1deg to 1deg max per the style guide's motif rules — cycle through a
 // small fixed set rather than randomizing on every render.
@@ -46,7 +59,16 @@ function applyRsvp(events: EventWithVenue[], action: RsvpAction) {
 
 export default function EventsBrowser({ events, setGoing, setSaved, confirmAttendance }: Props) {
   const [view, setView] = useState<"list" | "map">("list");
+  // Lazily mount the map the first time it's opened, then leave it mounted
+  // (just hidden) so switching tabs doesn't tear down and rebuild the
+  // maplibre instance/camera position every time.
+  const [mapMounted, setMapMounted] = useState(false);
   const [focusedEventId, setFocusedEventId] = useState<string | null>(null);
+  // Bumped on every "view on map" click so re-targeting the same event
+  // (e.g. after closing its card and reopening it from the list) still
+  // re-triggers the map's fly-to/open-card effect, which otherwise
+  // wouldn't fire again for an unchanged focusedEventId.
+  const [mapFocusNonce, setMapFocusNonce] = useState(0);
   const [rsvpError, setRsvpError] = useState<string | null>(null);
   const [, startTransition] = useTransition();
   const [optimisticEvents, applyOptimisticRsvp] = useOptimistic(
@@ -59,11 +81,29 @@ export default function EventsBrowser({ events, setGoing, setSaved, confirmAtten
   >({});
 
   useEffect(() => {
+    // Same justified state-in-effect pattern as ThemeToggle: mirroring an
+    // external switch (the view tab) into "has the map ever been opened".
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (view === "map") setMapMounted(true);
+  }, [view]);
+
+  useEffect(() => {
     if (view !== "list" || !focusedEventId) return;
     document
       .getElementById(`event-${focusedEventId}`)
       ?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [view, focusedEventId]);
+
+  function handleViewOnMap(eventId: string) {
+    setFocusedEventId(eventId);
+    setMapFocusNonce((n) => n + 1);
+    setView("map");
+  }
+
+  function handleViewInList(eventId: string) {
+    setFocusedEventId(eventId);
+    setView("list");
+  }
 
   function handleSetGoing(eventId: string, going: boolean) {
     startTransition(async () => {
@@ -145,28 +185,57 @@ export default function EventsBrowser({ events, setGoing, setSaved, confirmAtten
         )}
       </div>
 
-      {optimisticEvents.length === 0 ? (
-        <p className="font-mono text-xs text-kraft">
-          nothing on the calendar yet — check back soon.
-        </p>
-      ) : view === "map" ? (
-        <EventMap
-          events={optimisticEvents}
-          focusedEventId={focusedEventId}
-          onSelect={(id) => {
-            setFocusedEventId(id);
-            setView("list");
-          }}
-        />
-      ) : (
-        <div className="flex flex-col gap-8">
-          {happeningNow.length > 0 && (
-            <div className="space-y-3">
-              <p className="font-mono text-[10px] text-kraft uppercase tracking-wide">
-                happening now
-              </p>
+      {/* Map stays mounted (just hidden) once opened, list is conditionally
+          rendered — see the mapMounted comment above. */}
+      {mapMounted && (
+        <div className={view === "map" ? "contents" : "hidden"}>
+          <EventMap
+            events={optimisticEvents}
+            focusedEventId={view === "map" ? focusedEventId : null}
+            focusNonce={mapFocusNonce}
+            setGoing={handleSetGoing}
+            setSaved={handleSetSaved}
+            attendanceStatus={attendanceStatus}
+            onConfirmAttendance={handleConfirmAttendance}
+            onViewInList={handleViewInList}
+          />
+        </div>
+      )}
+
+      {view === "list" &&
+        (optimisticEvents.length === 0 ? (
+          <p className="font-mono text-xs text-kraft">
+            nothing on the calendar yet — check back soon.
+          </p>
+        ) : (
+          <div className="flex flex-col gap-8">
+            {happeningNow.length > 0 && (
+              <div className="space-y-3">
+                <p className="font-mono text-[10px] text-kraft uppercase tracking-wide">
+                  happening now
+                </p>
+                <ul className="flex flex-col gap-6">
+                  {happeningNow.map((event, i) => (
+                    <li key={event.id} id={`event-${event.id}`}>
+                      <EventCard
+                        event={event}
+                        rotation={CARD_ROTATIONS[i % CARD_ROTATIONS.length]}
+                        focused={event.id === focusedEventId}
+                        setGoing={handleSetGoing}
+                        setSaved={handleSetSaved}
+                        attendanceResult={attendanceStatus[event.id]}
+                        onConfirmAttendance={handleConfirmAttendance}
+                        onViewOnMap={handleViewOnMap}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {upcoming.length > 0 && (
               <ul className="flex flex-col gap-6">
-                {happeningNow.map((event, i) => (
+                {upcoming.map((event, i) => (
                   <li key={event.id} id={`event-${event.id}`}>
                     <EventCard
                       event={event}
@@ -176,146 +245,14 @@ export default function EventsBrowser({ events, setGoing, setSaved, confirmAtten
                       setSaved={handleSetSaved}
                       attendanceResult={attendanceStatus[event.id]}
                       onConfirmAttendance={handleConfirmAttendance}
+                      onViewOnMap={handleViewOnMap}
                     />
                   </li>
                 ))}
               </ul>
-            </div>
-          )}
-
-          {upcoming.length > 0 && (
-            <ul className="flex flex-col gap-6">
-              {upcoming.map((event, i) => (
-                <li key={event.id} id={`event-${event.id}`}>
-                  <EventCard
-                    event={event}
-                    rotation={CARD_ROTATIONS[i % CARD_ROTATIONS.length]}
-                    focused={event.id === focusedEventId}
-                    setGoing={handleSetGoing}
-                    setSaved={handleSetSaved}
-                    attendanceResult={attendanceStatus[event.id]}
-                    onConfirmAttendance={handleConfirmAttendance}
-                  />
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
+            )}
+          </div>
+        ))}
     </main>
-  );
-}
-
-function AttendanceMessage({ result }: { result: ConfirmAttendanceResult }) {
-  if (result.ok) return null;
-  const message: Record<Extract<ConfirmAttendanceResult, { ok: false }>["reason"], string> = {
-    not_started: "This show hasn't started yet.",
-    too_late: "This show started too long ago to confirm with GPS.",
-    too_far: "Doesn't look like you're at the venue — try again if you are.",
-    stale: "Your location reading was too old — try again.",
-    // Strict GPS-or-nothing, no manual fallback — captain decision on the
-    // open question in docs/designdoc.md §10, revisit once venue-printed
-    // check-in QR (Phase 4) ships. See events/actions.ts confirmAttendance.
-    no_location: "Couldn't confirm — location access is needed to verify you're at the show.",
-    error: "Couldn't confirm right now — try again.",
-  };
-  return (
-    <p className="font-mono text-[11px] text-stamp-red mt-2">
-      {message[result.reason]}
-    </p>
-  );
-}
-
-function EventCard({
-  event,
-  rotation,
-  focused,
-  setGoing,
-  setSaved,
-  attendanceResult,
-  onConfirmAttendance,
-}: {
-  event: EventWithVenue;
-  rotation: string;
-  focused: boolean;
-  setGoing: (eventId: string, going: boolean) => void;
-  setSaved: (eventId: string, saved: boolean) => void;
-  attendanceResult: "pending" | "confirmed" | ConfirmAttendanceResult | undefined;
-  onConfirmAttendance: (eventId: string) => void;
-}) {
-  const attended = event.attendedAt !== null || attendanceResult === "confirmed";
-
-  return (
-    <div
-      className={`bg-surface border border-ink rounded-[2px] p-5 ${rotation} ${
-        focused ? "ring-2 ring-riso-pink" : ""
-      }`}
-    >
-      <h2 className="font-display text-2xl leading-tight tracking-wide">
-        {event.title}
-      </h2>
-      <p className="font-mono text-[11px] text-kraft mt-2">
-        {event.venue.name} &middot; {event.displayTime}
-        {event.goingCount > 0 && (
-          <>
-            {" "}
-            &middot; {event.goingCount} going
-          </>
-        )}
-      </p>
-
-      {event.description && (
-        <p className="text-sm text-ink/90 leading-relaxed mt-3">
-          {event.description}
-        </p>
-      )}
-
-      <div className="border-t border-dashed border-line mt-4 pt-4 flex flex-wrap items-center gap-2">
-        {event.hasStarted ? (
-          attended ? (
-            <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-kraft border border-riso-pink rounded-full px-2.5 py-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-riso-pink" />
-              you were there
-            </span>
-          ) : (
-            <button
-              type="button"
-              onClick={() => onConfirmAttendance(event.id)}
-              disabled={attendanceResult === "pending"}
-              className="font-mono text-[11px] uppercase tracking-wide rounded-full px-3 py-1.5 border border-line text-kraft hover:border-kraft transition-colors disabled:opacity-60"
-            >
-              {attendanceResult === "pending" ? "checking…" : "i was there"}
-            </button>
-          )
-        ) : (
-          <button
-            type="button"
-            onClick={() => setGoing(event.id, !event.myGoing)}
-            className={`font-mono text-[11px] uppercase tracking-wide rounded-full px-3 py-1.5 border transition-colors ${
-              event.myGoing
-                ? "border-riso-pink text-riso-pink"
-                : "border-line text-kraft hover:border-kraft"
-            }`}
-          >
-            going
-          </button>
-        )}
-        <button
-          type="button"
-          onClick={() => setSaved(event.id, !event.mySaved)}
-          className={`font-mono text-[11px] uppercase tracking-wide rounded-full px-3 py-1.5 border transition-colors ${
-            event.mySaved
-              ? "border-riso-pink text-riso-pink"
-              : "border-line text-kraft hover:border-kraft"
-          }`}
-        >
-          save
-        </button>
-      </div>
-
-      {attendanceResult && attendanceResult !== "pending" && attendanceResult !== "confirmed" && (
-        <AttendanceMessage result={attendanceResult} />
-      )}
-    </div>
   );
 }
