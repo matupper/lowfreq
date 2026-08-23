@@ -476,10 +476,8 @@ the MVP.
 - [x] Add `expires_at` enforcement (short-lived invite tokens)
 - [x] Add GPS proximity check at invite scan time
 - [x] `attendance` table + "I Was There" confirmation flow at events
-- [x] Handle edge cases: expired token UX, revoking an unused invite
-- [ ] Decide (§10, still open) what happens if location permission is
-      denied or a GPS fix fails for attendance — current behavior is a
-      strict placeholder (no confirmation, no fallback), not a decision
+- [x] Handle edge cases: expired token UX, revoking an unused invite,
+      and location permission denied/GPS failure for attendance (see §10)
 
 ### Phase 4 — Opening up posting
 - [ ] User-submitted events (currently admin/seed-only), entering as
@@ -521,9 +519,12 @@ Things worth deciding before the phase that needs them, not before:
 - For "I Was There": if location permission is denied or a GPS check
   fails for a legitimate reason (e.g. bad signal in a basement venue —
   genuinely plausible for this app), is there a manual fallback, or is
-  it strictly GPS-or-nothing? The venue-printed QR (§3.1) gives this a
-  natural answer for events at venues that generate one, but not every
-  show will have one, so this still needs a decision for the rest.
+  it strictly GPS-or-nothing? **Decided (Phase 3):** strictly
+  GPS-or-nothing, no manual fallback — see `confirmAttendance` in
+  src/app/events/actions.ts. Revisit once the venue-printed QR (§3.1,
+  Phase 4) ships, since that gives bad-signal venues a real alternative
+  confirmation path (`attendance.method = 'venue_qr'`) without weakening
+  what a GPS-based "I Was There" claims to verify.
 - Venue-issued registration is a real loophole in the exclusivity
   model worth being honest about: a well-attended show could let
   dozens of strangers self-register from one poster in one night,

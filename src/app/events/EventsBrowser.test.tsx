@@ -238,8 +238,8 @@ describe("EventsBrowser attendance ('I Was There')", () => {
     await waitFor(() =>
       expect(screen.getByText(/location access is needed/i)).toBeTruthy()
     );
-    // Strict placeholder per the open §10 question — no manual "confirm
-    // anyway" option is offered.
+    // Strict GPS-or-nothing per the captain decision on §10 — no manual
+    // "confirm anyway" option is offered.
     expect(screen.queryByRole("button", { name: /confirm anyway/i })).toBeNull();
   });
 

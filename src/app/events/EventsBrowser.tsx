@@ -212,8 +212,9 @@ function AttendanceMessage({ result }: { result: ConfirmAttendanceResult }) {
     not_started: "This show hasn't started yet.",
     too_far: "Doesn't look like you're at the venue — try again if you are.",
     stale: "Your location reading was too old — try again.",
-    // Strict placeholder pending the open product question in
-    // docs/designdoc.md §10 (no manual fallback implemented yet).
+    // Strict GPS-or-nothing, no manual fallback — captain decision on the
+    // open question in docs/designdoc.md §10, revisit once venue-printed
+    // check-in QR (Phase 4) ships. See events/actions.ts confirmAttendance.
     no_location: "Couldn't confirm — location access is needed to verify you're at the show.",
     error: "Couldn't confirm right now — try again.",
   };

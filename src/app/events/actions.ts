@@ -62,12 +62,13 @@ export type ConfirmAttendanceResult =
 // ever RSVP'd going, and RSVPing going never implies this on its own.
 //
 // `reading` is null when the client couldn't get a GPS fix (denied,
-// unsupported, timed out). What should happen in that case for a
-// legitimately-attending user (e.g. bad signal in a basement venue) is an
-// open product question — docs/designdoc.md §10 raises it and doesn't
-// resolve it. This implementation takes the strict reading (no
-// confirmation without a location) as a safe placeholder pending that
-// decision, not as the decision itself.
+// unsupported, timed out). docs/designdoc.md §10 raised this as an open
+// question — a legitimately-attending user with bad signal (e.g. a
+// basement venue) would otherwise be stuck. Captain decision: strict
+// GPS-or-nothing, no manual fallback, for now. Revisit once the
+// venue-printed check-in QR (docs/designdoc.md §3.1, Phase 4) ships, since
+// that gives bad-signal venues a real alternative confirmation path
+// (`method: 'venue_qr'` already exists on `attendance` for exactly this).
 export async function confirmAttendance(
   eventId: string,
   reading: GeoReading | null

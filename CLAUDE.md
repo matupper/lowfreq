@@ -58,13 +58,16 @@ Geolocation API for client components that need to capture a reading.
 The `attendance` table (docs/designdoc.md §6.1) is built and
 deliberately independent of `rsvps` — confirming attendance never reads
 or writes going/saved, and vice versa. GPS-based confirmation
-(`confirmAttendance` in src/app/events/actions.ts) is live for the
-happy path. What should happen when location permission is denied or a
-GPS fix fails (docs/designdoc.md §10, still unresolved there) currently
-takes the strict reading — no confirmation, no fallback — as a
-placeholder, not a settled product decision. Don't treat that as
-"already decided" if you touch this code; check whether it's been
-resolved first.
+(`confirmAttendance` in src/app/events/actions.ts) is live.
+
+If location permission is denied or a GPS fix fails, confirmation is
+strictly GPS-or-nothing — no manual fallback (docs/designdoc.md §10,
+captain decision). This was chosen deliberately, not a stopgap to
+revisit casually: revisit specifically once the venue-printed check-in
+QR (§3.1, Phase 4) ships, since that gives bad-signal venues (e.g. a
+basement show) a real alternative confirmation path
+(`attendance.method = 'venue_qr'`) without weakening what a GPS-based
+confirmation claims to verify.
 
 ## Data model notes
 - public.users.id is the SAME id as auth.users.id (Supabase Auth), linked
@@ -81,9 +84,9 @@ resolved first.
 ## Build order
 Auth, event browse/RSVP, invite gating, and location verification
 (expiry enforcement, GPS-checked invites, attendance/"I Was There") are
-all built — one open product question remains on the attendance denied-
-location fallback (see "Attendance" above). For what's next, see
-docs/designdoc.md §9 (Phase 4 onward).
+all built, including the attendance denied-location decision (see
+"Attendance" above). For what's next, see docs/designdoc.md §9 (Phase 4
+onward).
 
 ## Copy voice
 Blunt, factual, not corporate. "You don't just sign up, someone lets you
