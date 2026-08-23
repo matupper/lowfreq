@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  effectiveInviteStatus,
   formatInviteToken,
   generateInviteToken,
+  INVITE_EXPIRY_MINUTES,
+  inviteExpiresAt,
   inviteJoinUrl,
   normalizeInviteToken,
 } from "./invites";
@@ -53,5 +56,35 @@ describe("inviteJoinUrl", () => {
     expect(inviteJoinUrl("https://lowfreq.app", "K7RX9QPL")).toBe(
       "https://lowfreq.app/signup?token=K7RX9QPL"
     );
+  });
+});
+
+describe("inviteExpiresAt", () => {
+  it("returns a timestamp INVITE_EXPIRY_MINUTES after the given time", () => {
+    const from = new Date("2026-01-01T00:00:00.000Z");
+    const expiresAt = new Date(inviteExpiresAt(from));
+    expect(expiresAt.getTime() - from.getTime()).toBe(INVITE_EXPIRY_MINUTES * 60 * 1000);
+  });
+});
+
+describe("effectiveInviteStatus", () => {
+  it("passes through used/revoked regardless of expiry", () => {
+    const past = new Date(Date.now() - 1000).toISOString();
+    expect(effectiveInviteStatus("used", past)).toBe("used");
+    expect(effectiveInviteStatus("revoked", past)).toBe("revoked");
+  });
+
+  it("treats an unused invite with no expiry as unused", () => {
+    expect(effectiveInviteStatus("unused", null)).toBe("unused");
+  });
+
+  it("treats an unused invite with a future expiry as unused", () => {
+    const future = new Date(Date.now() + 60_000).toISOString();
+    expect(effectiveInviteStatus("unused", future)).toBe("unused");
+  });
+
+  it("treats an unused invite past its expires_at as expired, even before the DB lazily flips it", () => {
+    const past = new Date(Date.now() - 1000).toISOString();
+    expect(effectiveInviteStatus("unused", past)).toBe("expired");
   });
 });

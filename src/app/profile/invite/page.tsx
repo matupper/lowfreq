@@ -2,8 +2,16 @@ import Link from "next/link";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { normalizeInviteToken, inviteJoinUrl } from "@/lib/invites";
+import { effectiveInviteStatus, normalizeInviteToken, inviteJoinUrl } from "@/lib/invites";
 import InviteStamp from "@/components/InviteStamp";
+import { revokeInvite } from "./actions";
+
+const STATUS_COPY: Record<string, string> = {
+  used: "This stamp has already been used.",
+  expired: "This stamp expired before anyone redeemed it. Generate a new one.",
+  revoked: "You cancelled this stamp.",
+  unused: "Show this to someone in person to let them in. Good for one use.",
+};
 
 export default async function InviteDisplayPage({
   searchParams,
@@ -26,7 +34,7 @@ export default async function InviteDisplayPage({
   // user generated themself.
   const { data: invite } = await supabase
     .from("invites")
-    .select("token, status")
+    .select("id, token, status, expires_at")
     .eq("token", token)
     .maybeSingle();
 
@@ -50,6 +58,7 @@ export default async function InviteDisplayPage({
   }
 
   const origin = (await headers()).get("origin") ?? "";
+  const status = effectiveInviteStatus(invite.status, invite.expires_at);
 
   return (
     <main className="flex-1 flex flex-col max-w-md mx-auto w-full px-6 py-10 gap-8">
@@ -62,17 +71,27 @@ export default async function InviteDisplayPage({
           YOUR STAMP
         </h1>
         <p className="text-sm text-kraft leading-relaxed pt-2 max-w-xs">
-          {invite.status === "used"
-            ? "This stamp has already been used."
-            : "Show this to someone in person to let them in. Good for one use."}
+          {STATUS_COPY[status]}
         </p>
       </div>
 
       <InviteStamp
         joinUrl={inviteJoinUrl(origin, invite.token)}
         token={invite.token}
-        used={invite.status === "used"}
+        status={status}
+        expiresAt={invite.expires_at}
       />
+
+      {status === "unused" && (
+        <form action={revokeInvite.bind(null, invite.id)}>
+          <button
+            type="submit"
+            className="text-kraft font-mono text-xs py-1.5 text-center w-full border border-line rounded-[2px] hover:border-kraft transition-colors"
+          >
+            Cancel this stamp
+          </button>
+        </form>
+      )}
     </main>
   );
 }

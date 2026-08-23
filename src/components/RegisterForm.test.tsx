@@ -65,4 +65,35 @@ describe("RegisterForm mid-flow invite invalidation", () => {
     // so the same stamp can be retried rather than dead-ending the visitor.
     expect(screen.getByLabelText(/username/i)).toBeTruthy();
   });
+
+  it("shows a distinct expired message rather than the generic invalid-invite copy", async () => {
+    registerWithInvite.mockResolvedValue({ expired: true });
+
+    render(<RegisterForm token="K7RX9QPL" />);
+
+    fireEvent.change(screen.getByLabelText(/username/i), { target: { value: "newuser" } });
+    fireEvent.change(screen.getByLabelText(/email/i), { target: { value: "new@example.com" } });
+    fireEvent.change(screen.getByLabelText(/password/i), { target: { value: "hunter22" } });
+    fireEvent.click(screen.getByRole("button", { name: /create account/i }));
+
+    await waitFor(() => expect(screen.getByText("THAT STAMP EXPIRED")).toBeTruthy());
+    expect(screen.queryByText(/someone else redeemed/i)).toBeNull();
+  });
+
+  it("offers a retry (not a dead end) when the GPS proximity check fails", async () => {
+    registerWithInvite.mockResolvedValue({ locationMismatch: "too_far" });
+
+    render(<RegisterForm token="K7RX9QPL" />);
+
+    fireEvent.change(screen.getByLabelText(/username/i), { target: { value: "newuser" } });
+    fireEvent.change(screen.getByLabelText(/email/i), { target: { value: "new@example.com" } });
+    fireEvent.change(screen.getByLabelText(/password/i), { target: { value: "hunter22" } });
+    fireEvent.click(screen.getByRole("button", { name: /create account/i }));
+
+    await waitFor(() =>
+      expect(screen.getByText(/doesn't look like you're there/i)).toBeTruthy()
+    );
+    const retryLink = screen.getByRole("link", { name: /try again/i });
+    expect(retryLink.getAttribute("href")).toBe("/signup?token=K7RX9QPL");
+  });
 });

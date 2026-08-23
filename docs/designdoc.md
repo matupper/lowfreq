@@ -471,13 +471,15 @@ Demoable, even without the invite system working yet.
 the MVP.
 
 ### Phase 3 — Location verification (invites + attendance)
-- [ ] Build the shared "is this device near this point right now"
-      capability once — both features below consume it
-- [ ] Add `expires_at` enforcement (short-lived invite tokens)
-- [ ] Add GPS proximity check at invite scan time
-- [ ] `attendance` table + "I Was There" confirmation flow at events
-- [ ] Handle edge cases: expired token UX, revoking an unused invite,
-      what happens if location permission is denied for attendance
+- [x] Build the shared "is this device near this point right now"
+      capability once — both features below consume it (src/lib/location.ts)
+- [x] Add `expires_at` enforcement (short-lived invite tokens)
+- [x] Add GPS proximity check at invite scan time
+- [x] `attendance` table + "I Was There" confirmation flow at events
+- [x] Handle edge cases: expired token UX, revoking an unused invite
+- [ ] Decide (§10, still open) what happens if location permission is
+      denied or a GPS fix fails for attendance — current behavior is a
+      strict placeholder (no confirmation, no fallback), not a decision
 
 ### Phase 4 — Opening up posting
 - [ ] User-submitted events (currently admin/seed-only), entering as
