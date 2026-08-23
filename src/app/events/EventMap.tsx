@@ -210,10 +210,13 @@ export default function EventMap({
     // ThemeToggle's effect-driven state sync.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setOpenEventId(focusedEventId);
-    // Only re-run when the parent hands us a new target, not on every
-    // render (which would fight manual pin clicks / camera moves).
+    // Only re-run when the parent hands us a genuinely new focus request
+    // (focusNonce), not whenever focusedEventId itself changes — the
+    // parent also nulls focusedEventId on every view-tab switch, and
+    // reacting to that would fly back / reopen a stale card over
+    // whatever the user navigated to manually in the meantime.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusedEventId, focusNonce, mapReady]);
+  }, [focusNonce, mapReady]);
 
   // Open/update/close the popup that expands a pin into its event card.
   useEffect(() => {
