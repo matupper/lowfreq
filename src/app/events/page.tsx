@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import EventsBrowser from "./EventsBrowser";
-import { ATTENDANCE_WINDOW_HOURS, confirmAttendance, setGoing, setSaved } from "./actions";
+import { confirmAttendance, setGoing, setSaved } from "./actions";
+import { ATTENDANCE_WINDOW_HOURS } from "./constants";
 import type { EventWithVenue } from "./types";
 
 // MVP is single-scene/single-city, so a fixed display timezone (rather

@@ -31,7 +31,8 @@ vi.mock("next/cache", () => ({
   revalidatePath: vi.fn(),
 }));
 
-import { confirmAttendance, ATTENDANCE_WINDOW_HOURS } from "./actions";
+import { confirmAttendance } from "./actions";
+import { ATTENDANCE_WINDOW_HOURS } from "./constants";
 
 const reading = { lat: 34.0537, lng: -118.2428, accuracy: 5, timestamp: Date.now() };
 

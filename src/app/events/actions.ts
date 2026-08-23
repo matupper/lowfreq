@@ -4,17 +4,11 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { checkProximity, type GeoReading } from "@/lib/location";
+import { ATTENDANCE_WINDOW_HOURS } from "./constants";
 
 function isEventId(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
 }
-
-// "I Was There" only makes sense while someone could plausibly still be at
-// (or just leaving) the venue — a live GPS check can't confirm attendance
-// at a show from last month. Shared with events/page.tsx's browse query so
-// the window that decides which events show the button matches the window
-// the mutation itself enforces.
-export const ATTENDANCE_WINDOW_HOURS = 6;
 
 // Going and saved are independent booleans on the same row (see
 // docs/designdoc.md §6) — toggling one must not clobber the other. That
