@@ -8,6 +8,7 @@ import {
   Popup,
   LngLatBounds,
   MapLibreMap,
+  setWorkerUrl,
 } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import EventCard from "./EventCard";
@@ -20,6 +21,25 @@ import type { ConfirmAttendanceResult } from "./actions";
 // support behind the tiles; see docs/designdoc.md §9 Phase 1 note.
 const DARK_STYLE = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
 const LIGHT_STYLE = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
+
+// maplibre-gl computes its tile-loading worker's script URL from
+// `import.meta.url` at runtime, which only resolves to a usable http(s)
+// URL when the module was loaded from a plain script tag — not when it's
+// pulled in through a dynamically-imported, code-split chunk (this file is
+// loaded via next/dynamic, see EventsBrowser.tsx). Under Turbopack that
+// resolution comes back empty, so maplibre silently falls back to
+// `new Worker("", { type: "module" })`, which resolves to the current HTML
+// page — that fails to parse as a JS module, so the worker never runs.
+// Nothing errors (nobody's listening for the worker's own error event),
+// every tile just sits in "loading" forever: style/sprite/tiles.json all
+// fetch fine, the canvas exists at the right size, but no tile ever
+// completes loading, so "load" never fires and the map stays a blank
+// square with no pins. Confirmed live by monkey-patching `window.Worker`
+// and observing the empty-string URL it was constructed with.
+// scripts/copy-maplibre-worker.js (run on every `npm install`) copies the
+// matching worker bundle into public/ so this path is always servable and
+// always matches the installed maplibre-gl version.
+setWorkerUrl("/maplibre-gl-worker.mjs");
 
 function currentMapStyle() {
   return document.documentElement.getAttribute("data-theme") === "light"
