@@ -42,6 +42,7 @@ describe("CheckEmailPage", () => {
     getClaims.mockResolvedValue({ data: { claims: null } });
 
     const element = await CheckEmailPage({
+      params: Promise.resolve({}),
       searchParams: Promise.resolve({ email: "newmember@example.com" }),
     });
     render(element);
@@ -59,6 +60,7 @@ describe("CheckEmailPage", () => {
     getClaims.mockResolvedValue({ data: { claims: null } });
 
     const element = await CheckEmailPage({
+      params: Promise.resolve({}),
       searchParams: Promise.resolve({}),
     });
     render(element);
@@ -71,7 +73,10 @@ describe("CheckEmailPage", () => {
 
     let thrown: unknown;
     try {
-      await CheckEmailPage({ searchParams: Promise.resolve({}) });
+      await CheckEmailPage({
+        params: Promise.resolve({}),
+        searchParams: Promise.resolve({}),
+      });
     } catch (e) {
       thrown = e;
     }
