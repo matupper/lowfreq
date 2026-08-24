@@ -32,7 +32,8 @@ that "someone let you in" feeling, not against conversion metrics.
   their profile
 - Camera-based scanning redeems the invite and pre-fills registration
 - Invites expire 5 minutes after generation, enforced server-side
-- Each member's profile shows their invite tree — who they let in
+- Each member's profile shows a friends-list: a highlighted card for
+  whoever invited them, and everyone they've invited below it
 
 **Location-verified invites**
 - Invite generation captures the inviter's GPS position (best-effort —
