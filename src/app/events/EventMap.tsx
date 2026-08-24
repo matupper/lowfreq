@@ -22,6 +22,12 @@ import type { ConfirmAttendanceResult } from "./actions";
 const DARK_STYLE = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
 const LIGHT_STYLE = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
 
+// How far down (in screen pixels) a "view on map" flyTo shifts the pin from
+// the map's true vertical center, so the bottom-anchored popup that opens
+// above it has room to render without clipping at the container's top edge.
+// See the flyTo call below for the full rationale.
+const PIN_FOCUS_OFFSET_Y = 130;
+
 // maplibre-gl computes its tile-loading worker's script URL from
 // `import.meta.url` at runtime, which only resolves to a usable http(s)
 // URL when the module was loaded from a plain script tag — not when it's
@@ -224,6 +230,17 @@ export default function EventMap({
       center: [event.venue.lng, event.venue.lat],
       zoom: Math.max(mapRef.current.getZoom(), 14),
       essential: true,
+      // The popup this opens (below) is bottom-anchored, so it renders
+      // *above* the pin — a geometrically-centered pin leaves only half
+      // the map's height for it and clips the card at the container's
+      // top edge. `offset` shifts the point the map treats as "center"
+      // down from the container's true center, moving the pin (and the
+      // popup above it) down without touching `center`/zoom math. Checked
+      // against short/medium/tall EventCard content against the map's
+      // 420px height (className below) with maplibre-gl directly — clears
+      // the popup with room to spare without pushing the pin off the
+      // bottom edge.
+      offset: [0, PIN_FOCUS_OFFSET_Y],
     });
     // Syncing local popup state to an external nav request (the list
     // view's "view on map" action), same justified pattern as
