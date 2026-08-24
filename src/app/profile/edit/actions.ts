@@ -30,6 +30,21 @@ export async function updateProfile(
     return { error: `Handle: ${HANDLE_FORMAT_HINT}.` };
   }
 
+  // Validate the avatar file up front, before any RPC writes, so an
+  // avatar-only validation failure doesn't leave a handle-only partial save.
+  const avatarFile = formData.get("avatar");
+  const hasAvatar = avatarFile instanceof File && avatarFile.size > 0;
+  let avatarExtension: string | undefined;
+  if (hasAvatar) {
+    if (avatarFile.size > MAX_AVATAR_BYTES) {
+      return { error: "Avatar image must be under 5MB." };
+    }
+    avatarExtension = AVATAR_EXTENSION_BY_TYPE[avatarFile.type];
+    if (!avatarExtension) {
+      return { error: "Avatar must be a JPEG, PNG, WebP, or GIF image." };
+    }
+  }
+
   // Set the handle first — fail fast on a uniqueness collision (the
   // lower(handle) unique index, see db/migrations/0005_profile_fields.sql)
   // before spending effort on an avatar upload.
@@ -43,16 +58,8 @@ export async function updateProfile(
     throw handleError;
   }
 
-  const avatarFile = formData.get("avatar");
-  if (avatarFile instanceof File && avatarFile.size > 0) {
-    if (avatarFile.size > MAX_AVATAR_BYTES) {
-      return { error: "Avatar image must be under 5MB." };
-    }
-    const extension = AVATAR_EXTENSION_BY_TYPE[avatarFile.type];
-    if (!extension) {
-      return { error: "Avatar must be a JPEG, PNG, WebP, or GIF image." };
-    }
-
+  if (hasAvatar && avatarExtension) {
+    const extension = avatarExtension;
     // Fixed filename per user so re-uploads overwrite in place (upsert)
     // instead of accumulating orphaned objects — see the storage RLS
     // comment in db/migrations/0005_profile_fields.sql.
