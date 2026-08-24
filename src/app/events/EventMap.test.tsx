@@ -4,6 +4,11 @@ import { setWorkerUrl } from "maplibre-gl";
 import EventMap from "./EventMap";
 import type { EventWithVenue } from "./types";
 
+// Vitest requires vars referenced inside a hoisted vi.mock factory to be
+// prefixed "mock" — see below. Lets tests assert on the options passed to
+// the real flyTo call without reaching into the mock's class internals.
+const mockFlyTo = vi.fn();
+
 // jsdom has no WebGL/canvas support, so the real maplibre-gl can't run in
 // tests. This mock keeps just enough surface area for EventMap's usage:
 // a Map that "loads" asynchronously (like the real one), and Marker/Popup
@@ -32,7 +37,9 @@ vi.mock("maplibre-gl", () => {
     }
     jumpTo() {}
     fitBounds() {}
-    flyTo() {}
+    flyTo(...args: unknown[]) {
+      mockFlyTo(...args);
+    }
     getZoom() {
       return 12;
     }
@@ -135,7 +142,10 @@ function renderMap(overrides: Partial<Parameters<typeof EventMap>[0]> = {}) {
 }
 
 describe("EventMap", () => {
-  afterEach(() => cleanup());
+  afterEach(() => {
+    cleanup();
+    mockFlyTo.mockClear();
+  });
 
   // Regression test for the real blank-map root cause: maplibre-gl derives
   // its tile-loading worker's script URL from `import.meta.url`, which
@@ -219,6 +229,24 @@ describe("EventMap", () => {
 
     await waitFor(() => expect(screen.getByText("Warehouse Set")).toBeTruthy());
     expect(screen.queryByText("Basement Show")).toBeNull();
+  });
+
+  // Regression test for the reported bug: "view on map" centered the pin at
+  // the map's true vertical center, so the bottom-anchored popup that opens
+  // above it (see the flyTo effect in EventMap.tsx) only had half the map's
+  // height to render in and got clipped at the container's top edge.
+  // Verified visually against real maplibre-gl (short/medium/tall card
+  // content in the map's 420px-tall container) that a positive downward
+  // `offset` on the flyTo call moves the pin — and the popup above it —
+  // clear of the clip. This locks in that the offset keeps being passed
+  // rather than silently regressing back to a geometrically-centered pin.
+  it("shifts the flyTo target down from center so the popup above the pin has room to render", async () => {
+    renderMap({ focusedEventId: "event-1", focusNonce: 1 });
+
+    await waitFor(() => expect(mockFlyTo).toHaveBeenCalled());
+    const call = mockFlyTo.mock.calls[0][0];
+    expect(call.offset).toEqual([0, expect.any(Number)]);
+    expect(call.offset[1]).toBeGreaterThan(0);
   });
 
   it("doesn't re-fly/reopen a stale focus target when focusedEventId is nulled and restored without a new focusNonce", async () => {
