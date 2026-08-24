@@ -81,6 +81,17 @@ than navigating away. Both views can jump to the other's matching card
 ("view on map" from a list card, "view in list" from the map's
 expanded card).
 
+maplibre-gl needs its `import.meta.url`-derived tile-loading worker URL
+overridden via `setWorkerUrl()` (called at module scope in EventMap.tsx) —
+that resolution comes back empty once the module is pulled in through
+next/dynamic's code-split chunk under Turbopack, so without the override
+the map silently never finishes loading (blank square, no console/network
+error, style/sprite/tiles.json all fetch fine). `scripts/copy-maplibre-worker.js`
+(runs on every `npm install`) copies the matching worker bundle into
+`public/` so that URL is servable; see AGENTS.md's "npm install drift"
+note for why this class of bug (works in source, breaks at runtime) needs
+a real browser to catch, not just tests/lint/build.
+
 ## Data model notes
 - public.users.id is the SAME id as auth.users.id (Supabase Auth), linked
   via a foreign key + trigger (handle_new_user). Never manually insert

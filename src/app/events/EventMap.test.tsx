@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { setWorkerUrl } from "maplibre-gl";
 import EventMap from "./EventMap";
 import type { EventWithVenue } from "./types";
 
@@ -92,6 +93,7 @@ vi.mock("maplibre-gl", () => {
         return this;
       }
     },
+    setWorkerUrl: vi.fn(),
   };
 });
 
@@ -134,6 +136,22 @@ function renderMap(overrides: Partial<Parameters<typeof EventMap>[0]> = {}) {
 
 describe("EventMap", () => {
   afterEach(() => cleanup());
+
+  // Regression test for the real blank-map root cause: maplibre-gl derives
+  // its tile-loading worker's script URL from `import.meta.url`, which
+  // doesn't resolve to a usable http(s) URL for this file once it's pulled
+  // in through next/dynamic's code-split chunk (confirmed live by
+  // monkey-patching window.Worker and observing it get constructed with an
+  // empty-string URL — the map then never fires "load" and stays blank
+  // with no console/network error anywhere). setWorkerUrl() overriding that
+  // with a stable, bundler-independent path is the actual fix; this locks
+  // in that the call happens rather than silently regressing back to the
+  // broken default. See scripts/copy-maplibre-worker.js for the other half
+  // (making that path servable).
+  it("overrides maplibre's worker URL instead of relying on its broken default resolution", () => {
+    renderMap();
+    expect(setWorkerUrl).toHaveBeenCalledWith("/maplibre-gl-worker.mjs");
+  });
 
   it("shows the invite-only empty state instead of a silent blank map", () => {
     renderMap({ events: [] });

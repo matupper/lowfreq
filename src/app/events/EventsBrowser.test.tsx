@@ -97,6 +97,7 @@ vi.mock("maplibre-gl", () => {
         return this;
       }
     },
+    setWorkerUrl: vi.fn(),
   };
 });
 

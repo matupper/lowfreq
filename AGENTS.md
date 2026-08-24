@@ -40,6 +40,38 @@ relying on `cookieOptions.maxAge` again — a future `@supabase/ssr` upgrade
 may fix this, at which point the `setAll` override becomes redundant but
 harmless.
 
+## Fresh worktree: `npm install` before trusting a "module not found"
+
+A freshly created git worktree here can have a `node_modules/` that's out
+of sync with `package-lock.json` (e.g. missing a package the lockfile
+already resolves) even though `node_modules/` isn't empty. This looks
+exactly like a real bug (Next.js dev/build throws `Module not found`) but
+isn't one — run `npm install` first and see if it goes away before
+diagnosing further. Confirm with `npm ls <package>` vs. `node -e
+"console.log(require('./package-lock.json').packages['node_modules/<package>'])"`
+before concluding a dependency is genuinely missing from the project.
+
+## chrome-devtools-axi: worker never responds ("Target closed") in this environment
+
+`chrome-devtools-axi start`/`open` can fail with `Protocol error
+(Target.setDiscoverTargets): Target closed` here — the underlying
+`chrome-devtools-mcp` server launches Chrome with Puppeteer's `pipe: true`
+CDP transport, and the nested `npm exec ... | sh -c ...` process wrapping
+chrome-devtools-axi uses to spawn it doesn't reliably preserve the pipe's
+file descriptors. Chrome itself launches fine (verified directly with the
+same flags). Workaround: launch Chrome yourself with a real
+`--remote-debugging-port`, then point the bridge at it instead of letting
+it launch its own:
+```
+CHROME=~/.cache/puppeteer/chrome/*/chrome-linux64/chrome
+"$CHROME" --headless --disable-dev-shm-usage --no-sandbox --remote-debugging-port=9333 \
+  --user-data-dir=/some/scratch/dir about:blank &
+CHROME_DEVTOOLS_AXI_BROWSER_URL=http://127.0.0.1:9333 chrome-devtools-axi start
+```
+This machine also runs multiple concurrent agent sessions sharing the
+default chrome-devtools-axi bridge/port — set `CHROME_DEVTOOLS_AXI_SESSION`
+to a unique name to avoid colliding with another session's browser.
+
 ## Maintaining this file
 
 Keep this file for knowledge useful to almost every future agent session in this project.
