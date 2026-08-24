@@ -34,6 +34,11 @@ export default async function ProfilePage() {
   const going = rsvps.filter((r) => r.going);
   const saved = rsvps.filter((r) => r.saved);
   const tree = (treeResult.data ?? []) as InviteTreeRow[];
+  if (inviterResult.error) {
+    throw new Error(
+      `Failed to load inviter: ${inviterResult.error.message}`,
+    );
+  }
   const inviter = (((inviterResult.data ?? []) as Inviter[])[0]) ?? null;
 
   return (
