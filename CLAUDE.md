@@ -35,7 +35,14 @@ and the invite tree are built — see docs/designdoc.md §9 (Phase 2) for
 the checklist. Current token model: single-use, expires after
 `INVITE_EXPIRY_MINUTES` (src/lib/invites.ts, currently 5 min), enforced
 server-side in `redeem_invite`/`invite_lookup_status` (db/schema.sql).
-Still creates a real invite tree via users.invited_by → invites.id.
+Still creates a real invite tree via users.invited_by → invites.id. Note
+the indirection: `invited_by` points at the *invite row*, not the
+inviter's user id directly, so reading "who invited this user" requires
+joining through `invites.created_by` — see `get_my_inviter()` (the
+inverse of `get_invite_tree()`) in db/schema.sql. Profile (§4.7) surfaces
+both directions: your inviter as a highlighted "invited by" card, and
+everyone you've invited as a friends-list-style section below it
+(src/app/profile/InviteFriends.tsx).
 
 Location-verified tokens (docs/designdoc.md §9 Phase 3) are built:
 `invites.lat`/`lng` capture the inviter's device position at generation

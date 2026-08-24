@@ -1,11 +1,10 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { effectiveInviteStatus, formatInviteToken } from "@/lib/invites";
 import ThemeToggle from "@/components/ThemeToggle";
 import GenerateInviteButton from "@/components/GenerateInviteButton";
 import { signOut } from "@/app/home/actions";
-import { revokeInvite } from "./invite/actions";
+import { InvitedByCard, InviteeList, type Inviter, type InviteTreeRow } from "./InviteFriends";
 
 const SCENE_TIMEZONE = "America/Los_Angeles";
 const timeFormatter = new Intl.DateTimeFormat("en-US", {
@@ -15,17 +14,6 @@ const timeFormatter = new Intl.DateTimeFormat("en-US", {
   day: "numeric",
 });
 
-type InviteTreeRow = {
-  invite_id: string;
-  token: string;
-  status: string;
-  expires_at: string | null;
-  created_at: string;
-  invitee_id: string | null;
-  invitee_name: string | null;
-  invitee_joined_at: string | null;
-};
-
 export default async function ProfilePage() {
   const supabase = await createClient();
   const {
@@ -33,18 +21,20 @@ export default async function ProfilePage() {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const [rsvpsResult, treeResult] = await Promise.all([
+  const [rsvpsResult, treeResult, inviterResult] = await Promise.all([
     supabase
       .from("rsvps")
       .select("going, saved, event:events(id, title, start_time)")
       .eq("user_id", user.id),
     supabase.rpc("get_invite_tree"),
+    supabase.rpc("get_my_inviter"),
   ]);
 
   const rsvps = rsvpsResult.data ?? [];
   const going = rsvps.filter((r) => r.going);
   const saved = rsvps.filter((r) => r.saved);
   const tree = (treeResult.data ?? []) as InviteTreeRow[];
+  const inviter = (((inviterResult.data ?? []) as Inviter[])[0]) ?? null;
 
   return (
     <main className="flex-1 flex flex-col max-w-md mx-auto w-full px-6 py-10 gap-10">
@@ -87,52 +77,21 @@ export default async function ProfilePage() {
       </section>
 
       <section className="space-y-3 border-t border-dashed border-line pt-8">
-        <div className="flex items-center justify-between">
-          <h2 className="font-mono text-[11px] text-kraft uppercase tracking-wide">
-            invites
-          </h2>
-        </div>
-        <GenerateInviteButton />
+        <h2 className="font-mono text-[11px] text-kraft uppercase tracking-wide">
+          friends
+        </h2>
 
-        {tree.length > 0 && (
-          <ul className="flex flex-col gap-2 pt-2">
-            {tree.map((row) => {
-              const status = effectiveInviteStatus(row.status, row.expires_at);
-              return (
-                <li
-                  key={row.invite_id}
-                  className="flex items-center justify-between border-b border-line py-2 last:border-none gap-2"
-                >
-                  <span className="font-mono text-xs text-kraft">
-                    {formatInviteToken(row.token)}
-                  </span>
-                  {row.invitee_name ? (
-                    <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-kraft border border-riso-pink rounded-full px-2.5 py-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-riso-pink" />
-                      {row.invitee_name} joined
-                    </span>
-                  ) : status === "unused" ? (
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-[11px] text-kraft">
-                        not redeemed yet
-                      </span>
-                      <form action={revokeInvite.bind(null, row.invite_id)}>
-                        <button
-                          type="submit"
-                          className="font-mono text-[11px] text-kraft underline underline-offset-2"
-                        >
-                          revoke
-                        </button>
-                      </form>
-                    </div>
-                  ) : (
-                    <span className="font-mono text-[11px] text-kraft">{status}</span>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        )}
+        <InvitedByCard inviter={inviter} />
+
+        <div className="space-y-3 pt-1">
+          <div className="flex items-center justify-between">
+            <h3 className="font-mono text-[11px] text-kraft uppercase tracking-wide">
+              who you&rsquo;ve invited
+            </h3>
+          </div>
+          <GenerateInviteButton />
+          <InviteeList tree={tree} />
+        </div>
       </section>
     </main>
   );
