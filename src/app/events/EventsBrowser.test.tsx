@@ -13,6 +13,12 @@ vi.mock("@/lib/geolocation-client", () => ({
   getCurrentLocation: (...args: unknown[]) => getCurrentLocation(...args),
 }));
 
+// Tracks calls to the map's resize() across every FakeMap instance created
+// by a test — see the "resize on reveal" regression test below. Must be
+// vi.hoisted since vi.mock factories are hoisted above this file's own
+// top-level declarations.
+const { resizeCalls } = vi.hoisted(() => ({ resizeCalls: vi.fn() }));
+
 // jsdom has no WebGL/canvas support, so the real maplibre-gl (loaded by
 // EventMap, which EventsBrowser pulls in via next/dynamic) can't run in
 // tests — see the fuller version of this mock's reasoning in
@@ -41,6 +47,9 @@ vi.mock("maplibre-gl", () => {
       return 12;
     }
     setStyle() {}
+    resize() {
+      resizeCalls();
+    }
     remove() {}
   }
 
@@ -385,7 +394,10 @@ describe("EventsBrowser attendance ('I Was There')", () => {
 });
 
 describe("EventsBrowser list <-> map navigation", () => {
-  afterEach(() => cleanup());
+  afterEach(() => {
+    cleanup();
+    resizeCalls.mockClear();
+  });
 
   it("jumps from a list card to that event's pin on the map", async () => {
     render(
@@ -428,5 +440,36 @@ describe("EventsBrowser list <-> map navigation", () => {
     // since the map's own copy of this event's card is still in the DOM.
     const listCard = document.getElementById("event-event-1")!;
     expect(within(listCard).getByRole("button", { name: "going" })).toBeTruthy();
+  });
+
+  // Regression test for the blank-map bug: the map tab is kept mounted but
+  // CSS-hidden (display:none) when the list tab is active, and maplibre-gl's
+  // own resize() docs say it "must be called ... when the map is shown
+  // after being initially hidden with CSS" — its internal ResizeObserver
+  // doesn't reliably pick that transition up on its own. Without an
+  // explicit resize() call on every hidden -> shown transition, a real map
+  // can end up canvas-sized for whatever it last measured (or never
+  // measured at all), rendering a blank square with no tiles or pins even
+  // though tile requests still fire.
+  it("resizes the map every time the map tab is revealed, not just on first mount", async () => {
+    render(
+      <EventsBrowser
+        events={[makeEvent()]}
+        setGoing={vi.fn()}
+        setSaved={vi.fn()}
+        confirmAttendance={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "map" }));
+    await waitFor(() => expect(resizeCalls).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole("button", { name: "list" }));
+    resizeCalls.mockClear();
+
+    // Revisiting the map tab must resize the still-mounted map again, not
+    // rely solely on the one-time resize from its original creation.
+    fireEvent.click(screen.getByRole("button", { name: "map" }));
+    await waitFor(() => expect(resizeCalls).toHaveBeenCalled());
   });
 });

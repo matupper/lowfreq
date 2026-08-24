@@ -29,6 +29,14 @@ function currentMapStyle() {
 
 type Props = {
   events: EventWithVenue[];
+  // EventsBrowser keeps the map mounted (just hidden via CSS) once opened
+  // rather than tearing it down on every tab switch — see the mapMounted
+  // comment there. `visible` tells us when the "hidden" -> shown side of
+  // that toggle happens, so we can call maplibre's resize(), which per its
+  // own docs "must be called ... when the map is shown after being
+  // initially hidden with CSS" (it doesn't reliably self-correct via its
+  // internal ResizeObserver for that transition).
+  visible: boolean;
   // Set by the list view's "view on map" action — pan/zoom to this
   // event's venue and open its card as soon as the map is ready.
   focusedEventId: string | null;
@@ -54,6 +62,7 @@ type PopupEntry = {
 
 export default function EventMap({
   events,
+  visible,
   focusedEventId,
   focusNonce,
   setGoing,
@@ -151,6 +160,17 @@ export default function EventMap({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [events.length === 0]);
+
+  // The container is CSS-hidden (display:none) while the list tab is
+  // active — EventsBrowser keeps this component mounted rather than
+  // tearing it down on every switch. maplibre-gl's own resize() docs say
+  // it "must be called ... when the map is shown after being initially
+  // hidden with CSS"; its internal ResizeObserver doesn't reliably pick
+  // that transition up on its own. Also safe (a no-op if size is
+  // unchanged) on the very first mount, before "load" has fired.
+  useEffect(() => {
+    if (visible) mapRef.current?.resize();
+  }, [visible]);
 
   // Sync markers: create one per venue, drop ones for venues no longer in
   // the event list, and (re)render each so the "active" pin reflects

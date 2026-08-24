@@ -81,6 +81,18 @@ than navigating away. Both views can jump to the other's matching card
 ("view on map" from a list card, "view in list" from the map's
 expanded card).
 
+EventsBrowser keeps the map mounted-but-CSS-hidden (`display:none`) when
+the list tab is active, instead of unmounting it, so camera/popup state
+survives tab switches. Because of that, EventMap takes a `visible` prop
+and calls `map.resize()` whenever it flips to visible — maplibre-gl's own
+docs say resize() "must be called ... when the map is shown after being
+initially hidden with CSS" (its internal ResizeObserver doesn't reliably
+catch that transition on its own). Dropping this call reproduces the
+"blank square, tiles/pins never appear" bug on revisiting the map tab;
+this class of bug can't be caught by jsdom-based unit tests (no real
+layout engine, so a maplibre mock can't be given non-zero dimensions to
+assert against) — the resize() call itself is what's tested instead.
+
 ## Data model notes
 - public.users.id is the SAME id as auth.users.id (Supabase Auth), linked
   via a foreign key + trigger (handle_new_user). Never manually insert

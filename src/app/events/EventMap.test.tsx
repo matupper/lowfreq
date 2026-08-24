@@ -36,6 +36,7 @@ vi.mock("maplibre-gl", () => {
       return 12;
     }
     setStyle() {}
+    resize() {}
     remove() {}
   }
 
@@ -119,6 +120,7 @@ function renderMap(overrides: Partial<Parameters<typeof EventMap>[0]> = {}) {
   const onViewInList = vi.fn();
   const props = {
     events: [makeEvent()],
+    visible: true,
     focusedEventId: null,
     focusNonce: 0,
     setGoing,
@@ -218,6 +220,7 @@ describe("EventMap", () => {
     const onViewInList = vi.fn();
     const baseProps = {
       events,
+      visible: true,
       setGoing,
       setSaved,
       attendanceStatus: {},

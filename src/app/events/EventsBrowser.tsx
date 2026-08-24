@@ -191,6 +191,7 @@ export default function EventsBrowser({ events, setGoing, setSaved, confirmAtten
         <div className={view === "map" ? "contents" : "hidden"}>
           <EventMap
             events={optimisticEvents}
+            visible={view === "map"}
             focusedEventId={view === "map" ? focusedEventId : null}
             focusNonce={mapFocusNonce}
             setGoing={handleSetGoing}
