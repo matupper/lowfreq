@@ -98,6 +98,29 @@ This machine also runs multiple concurrent agent sessions sharing the
 default chrome-devtools-axi bridge/port — set `CHROME_DEVTOOLS_AXI_SESSION`
 to a unique name to avoid colliding with another session's browser.
 
+## Mutating specific `users` columns: RPC, not an RLS UPDATE policy
+
+`users` has no RLS `update` policy, and that's deliberate — the table also
+holds `phone`/`invited_by`/`created_at`, and a plain `auth.uid() = id`
+`UPDATE` policy can only restrict which *rows* a client changes, not which
+*columns*. Every user-editable field on `users` (`handle`, `avatar_url`)
+is instead set through a narrow security-definer RPC that touches only
+that one column (`set_handle`, `set_avatar_url` in db/schema.sql — same
+pattern as `redeem_invite`/`revoke_invite`/`set_rsvp_going`). Add new
+`users` mutations the same way rather than opening the table up.
+
+## Avatar storage: fixed path + cache-busting URL
+
+Avatars live in the public `avatars` Storage bucket at one fixed path per
+user (`<user_id>/avatar.<ext>`), uploaded with `upsert: true` so a
+re-upload overwrites in place instead of accumulating orphaned objects.
+Because the path never changes, the *URL* doesn't change either on
+re-upload — browsers/CDNs will keep serving the old cached image unless
+something busts the cache. `users.avatar_url` is stored with a `?v=<ts>`
+query param appended at save time (see `updateProfile` in
+src/app/profile/edit/actions.ts) specifically for this; don't strip it
+when reading/displaying the URL elsewhere.
+
 ## Maintaining this file
 
 Keep this file for knowledge useful to almost every future agent session in this project.

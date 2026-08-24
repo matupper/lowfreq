@@ -11,6 +11,7 @@
 drop trigger if exists on_auth_user_created on auth.users;
 drop function if exists public.handle_new_user();
 
+drop table if exists user_profiles cascade;
 drop table if exists attendance cascade;
 drop table if exists rsvps cascade;
 drop table if exists events cascade;
@@ -23,13 +24,24 @@ create extension if not exists pgcrypto;
 -- ── Tables ───────────────────────────────────────────────────
 
 -- users.id is the SAME id as Supabase's auth.users — no separate identity.
+-- handle/avatar_url are the profile-identity fields from docs/designdoc.md
+-- §4.15/§6.1 — see db/migrations/0005_profile_fields.sql for the full
+-- data-model decision (why these two live on `users` while
+-- bio/instruments/favorites live in the separate `user_profiles` table
+-- below, why handle is nullable, why case-insensitive uniqueness is a
+-- lower(handle) index rather than citext).
 create table users (
   id uuid primary key references auth.users(id) on delete cascade,
   name text not null default 'new user',
   phone text unique,
+  handle text,
+  avatar_url text,
   invited_by uuid,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  constraint users_handle_format check (handle is null or handle ~ '^[A-Za-z0-9_]{3,20}$')
 );
+
+create unique index users_handle_lower_idx on users (lower(handle)) where handle is not null;
 
 create table invites (
   id uuid primary key default gen_random_uuid(),
@@ -97,6 +109,22 @@ create table attendance (
   unique (user_id, event_id)
 );
 
+-- Optional "music identity" fields (docs/designdoc.md §4.15/§6.1) — bio,
+-- instruments, favorites. Kept separate from `users` because this content
+-- is list-shaped, optional, and only ever read on the profile screen
+-- itself (see db/migrations/0005_profile_fields.sql for the full
+-- reasoning). 1:1 with users; a row only exists once someone has actually
+-- set at least one of these fields.
+create table user_profiles (
+  user_id uuid primary key references users(id) on delete cascade,
+  bio text,
+  instruments text[] not null default '{}',
+  favorite_artists text[] not null default '{}',
+  favorite_albums text[] not null default '{}',
+  favorite_songs text[] not null default '{}',
+  updated_at timestamptz not null default now()
+);
+
 -- ── Indexes ──────────────────────────────────────────────────
 create index events_start_time_idx on events (start_time);
 create index rsvps_event_id_idx on rsvps (event_id);
@@ -131,6 +159,7 @@ alter table venues enable row level security;
 alter table events enable row level security;
 alter table rsvps enable row level security;
 alter table attendance enable row level security;
+alter table user_profiles enable row level security;
 
 create policy "users can view own row" on users for select using (auth.uid() = id);
 create policy "events are publicly readable" on events for select using (true);
@@ -152,6 +181,14 @@ create policy "users can view their own attendance" on attendance for select usi
 -- confirm attendance as themselves, not the source of truth for whether
 -- the confirmation is legitimate.
 create policy "users can confirm their own attendance" on attendance for insert with check (auth.uid() = user_id);
+
+-- No public select policy: same owner-only posture as `users` (see
+-- db/migrations/0005_profile_fields.sql) — a future public-profile/feed
+-- feature should read this through its own narrow security-definer
+-- accessor rather than loosening these policies.
+create policy "users can view own profile fields" on user_profiles for select using (auth.uid() = user_id);
+create policy "users can insert own profile fields" on user_profiles for insert with check (auth.uid() = user_id);
+create policy "users can update own profile fields" on user_profiles for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 -- ── RSVP counts (privacy-preserving) ─────────────────────────
 -- The rsvps select policy above is intentionally scoped to auth.uid() =
@@ -425,3 +462,75 @@ as $$
 $$;
 
 grant execute on function public.get_my_inviter() to authenticated;
+
+-- ── Profile fields (handle, avatar) ───────────────────────────
+-- Narrow, single-column mutation RPCs rather than an RLS UPDATE policy on
+-- `users` — see db/migrations/0005_profile_fields.sql for why (users also
+-- holds phone/invited_by/created_at, which RLS can't shield column-by-column).
+create or replace function public.set_handle(p_handle text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  update users set handle = p_handle where id = auth.uid();
+end;
+$$;
+
+grant execute on function public.set_handle(text) to authenticated;
+
+create or replace function public.set_avatar_url(p_avatar_url text)
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  update users set avatar_url = p_avatar_url where id = auth.uid();
+$$;
+
+grant execute on function public.set_avatar_url(text) to authenticated;
+
+-- ── Avatar storage ───────────────────────────────────────────
+-- Public bucket (avatars are meant to be displayed everywhere a user
+-- appears), one object per user at `<user_id>/avatar.<ext>` — writes
+-- locked to the owning user via the folder-name-matches-auth.uid()
+-- convention, same "public read, owner-only write" posture as
+-- music_connections/now_playing (§6.1).
+insert into storage.buckets (id, name, public)
+values ('avatars', 'avatars', true)
+on conflict (id) do nothing;
+
+drop policy if exists "avatar images are publicly readable" on storage.objects;
+drop policy if exists "users can upload their own avatar" on storage.objects;
+drop policy if exists "users can replace their own avatar" on storage.objects;
+drop policy if exists "users can delete their own avatar" on storage.objects;
+
+create policy "avatar images are publicly readable"
+  on storage.objects for select
+  using (bucket_id = 'avatars');
+
+create policy "users can upload their own avatar"
+  on storage.objects for insert
+  with check (
+    bucket_id = 'avatars'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+create policy "users can replace their own avatar"
+  on storage.objects for update
+  using (
+    bucket_id = 'avatars'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  )
+  with check (
+    bucket_id = 'avatars'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+create policy "users can delete their own avatar"
+  on storage.objects for delete
+  using (
+    bucket_id = 'avatars'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
