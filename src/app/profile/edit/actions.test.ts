@@ -5,6 +5,8 @@ const getUser = vi.fn();
 const upsert = vi.fn();
 const storageUpload = vi.fn();
 const storageGetPublicUrl = vi.fn();
+const storageList = vi.fn();
+const storageRemove = vi.fn();
 
 vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => ({
@@ -17,7 +19,12 @@ vi.mock("@/lib/supabase/server", () => ({
     storage: {
       from: (bucket: string) => {
         if (bucket !== "avatars") throw new Error(`unexpected bucket: ${bucket}`);
-        return { upload: storageUpload, getPublicUrl: storageGetPublicUrl };
+        return {
+          upload: storageUpload,
+          getPublicUrl: storageGetPublicUrl,
+          list: storageList,
+          remove: storageRemove,
+        };
       },
     },
   }),
@@ -49,6 +56,8 @@ describe("updateProfile", () => {
     upsert.mockReset();
     storageUpload.mockReset();
     storageGetPublicUrl.mockReset();
+    storageList.mockReset();
+    storageRemove.mockReset();
   });
 
   it("rejects an invalid handle before calling any RPC", async () => {
@@ -153,6 +162,7 @@ describe("updateProfile", () => {
     rpc.mockResolvedValue({ error: null });
     upsert.mockResolvedValue({ error: null });
     storageUpload.mockResolvedValue({ error: null });
+    storageList.mockResolvedValue({ data: [] });
     storageGetPublicUrl.mockReturnValue({
       data: { publicUrl: "https://storage.example/avatars/user-1/avatar.png" },
     });
@@ -176,5 +186,28 @@ describe("updateProfile", () => {
         ),
       })
     );
+    expect(storageRemove).not.toHaveBeenCalled();
+  });
+
+  it("removes a stale avatar object left behind by a prior upload under a different extension", async () => {
+    getUser.mockResolvedValue({ data: { user: { id: "user-1" } } });
+    rpc.mockResolvedValue({ error: null });
+    upsert.mockResolvedValue({ error: null });
+    storageUpload.mockResolvedValue({ error: null });
+    storageList.mockResolvedValue({
+      data: [{ name: "avatar.jpg" }, { name: "avatar.png" }],
+    });
+    storageGetPublicUrl.mockReturnValue({
+      data: { publicUrl: "https://storage.example/avatars/user-1/avatar.png" },
+    });
+
+    const fd = baseFormData();
+    const image = new File([new Uint8Array(100)], "avatar.png", { type: "image/png" });
+    fd.set("avatar", image);
+
+    await expect(updateProfile(null, fd)).rejects.toThrow("REDIRECT:/profile");
+
+    expect(storageList).toHaveBeenCalledWith("user-1");
+    expect(storageRemove).toHaveBeenCalledWith(["user-1/avatar.jpg"]);
   });
 });

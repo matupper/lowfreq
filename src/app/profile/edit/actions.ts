@@ -64,6 +64,19 @@ export async function updateProfile(
       return { error: "Couldn't upload that image. Try again." };
     }
 
+    // A prior avatar uploaded under a different extension lives at a
+    // different path and won't be overwritten by the upsert above — clean
+    // it up so it doesn't stick around as an orphaned public object.
+    const { data: existingAvatarFiles } = await supabase.storage
+      .from("avatars")
+      .list(user.id);
+    const staleAvatarPaths = (existingAvatarFiles ?? [])
+      .filter((file) => file.name.startsWith("avatar.") && file.name !== `avatar.${extension}`)
+      .map((file) => `${user.id}/${file.name}`);
+    if (staleAvatarPaths.length > 0) {
+      await supabase.storage.from("avatars").remove(staleAvatarPaths);
+    }
+
     const {
       data: { publicUrl },
     } = supabase.storage.from("avatars").getPublicUrl(path);
