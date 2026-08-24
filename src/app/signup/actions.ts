@@ -8,7 +8,6 @@ import { checkProximity, type GeoReading } from "@/lib/location";
 
 export type RegisterState =
   | { error: string }
-  | { message: string }
   | { invalidInvite: true }
   | { expired: true }
   | { locationMismatch: "too_far" | "stale" }
@@ -95,8 +94,9 @@ export async function registerWithInvite(
     return { invalidInvite: true };
   }
 
+  const email = formData.get("email") as string;
   const { data, error } = await supabase.auth.signUp({
-    email: formData.get("email") as string,
+    email,
     password: formData.get("password") as string,
     options: {
       data: {
@@ -118,5 +118,18 @@ export async function registerWithInvite(
     redirect("/home");
   }
 
-  return { message: "Check your email to confirm your account, then log in." };
+  // No session yet: this project's Supabase Auth requires email
+  // confirmation, so signUp() above never establishes one — that's
+  // expected, not a failure. The invite is already correctly marked used
+  // (redeem_invite ran above), so this MUST navigate off /signup?token=…
+  // via a real redirect rather than returning inline state: any state
+  // returned to useActionState here would sit behind SignupPage's own
+  // server-side invite_lookup_status re-check, which Next.js re-runs
+  // automatically whenever a Server Action sets cookies (signUp() above
+  // does, via @supabase/ssr's setAll — see src/lib/supabase/server.ts).
+  // That re-check now sees status='used' and swaps in the "already used"
+  // dead-end screen, silently discarding this exact state. A redirect
+  // lands the browser on a route that isn't gated on this invite's status
+  // at all, so that race can't reoccur.
+  redirect(`/signup/check-email?email=${encodeURIComponent(email)}`);
 }
