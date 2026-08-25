@@ -56,11 +56,17 @@ that "someone let you in" feeling, not against conversion metrics.
   happen — there's no manual fallback. That's deliberate: a typed-in
   "I was there" claim isn't worth what a GPS-checked one is.
 
+**Profile**
+- Profile picture, a unique handle, and an optional bio
+- Optional "share your music identity": instruments played and
+  favorite artists/albums/songs, shown as pill lists — only for
+  whichever categories you've actually filled in
+
 None of this is mocked up — auth, RSVP, invite generation/scanning,
-gated registration, and GPS verification are all live, server-enforced
-code paths. See `docs/designdoc.md` §9 for what's shipped (Phases 0–3)
-versus what's still ahead (venue-run events, bands, forum, etc. — Phase
-4 onward, not built).
+gated registration, GPS verification, and profile editing are all
+live, server-enforced code paths. See `docs/designdoc.md` §9 for
+what's shipped versus what's still ahead (venue-run events, bands,
+forum, etc. — not built).
 
 ## Visual language
 

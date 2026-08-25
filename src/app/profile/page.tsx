@@ -5,6 +5,15 @@ import ThemeToggle from "@/components/ThemeToggle";
 import GenerateInviteButton from "@/components/GenerateInviteButton";
 import { signOut } from "@/app/home/actions";
 import { InvitedByCard, InviteeList, type Inviter, type InviteTreeRow } from "./InviteFriends";
+import { buildMusicPillGroups } from "@/lib/profile-fields";
+
+type ProfileFieldsRow = {
+  bio: string | null;
+  instruments: string[];
+  favorite_artists: string[];
+  favorite_albums: string[];
+  favorite_songs: string[];
+} | null;
 
 const SCENE_TIMEZONE = "America/Los_Angeles";
 const timeFormatter = new Intl.DateTimeFormat("en-US", {
@@ -21,14 +30,21 @@ export default async function ProfilePage() {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const [rsvpsResult, treeResult, inviterResult] = await Promise.all([
-    supabase
-      .from("rsvps")
-      .select("going, saved, event:events(id, title, start_time)")
-      .eq("user_id", user.id),
-    supabase.rpc("get_invite_tree"),
-    supabase.rpc("get_my_inviter"),
-  ]);
+  const [rsvpsResult, treeResult, inviterResult, identityResult, profileFieldsResult] =
+    await Promise.all([
+      supabase
+        .from("rsvps")
+        .select("going, saved, event:events(id, title, start_time)")
+        .eq("user_id", user.id),
+      supabase.rpc("get_invite_tree"),
+      supabase.rpc("get_my_inviter"),
+      supabase.from("users").select("handle, avatar_url").eq("id", user.id).single(),
+      supabase
+        .from("user_profiles")
+        .select("bio, instruments, favorite_artists, favorite_albums, favorite_songs")
+        .eq("user_id", user.id)
+        .maybeSingle(),
+    ]);
 
   const rsvps = rsvpsResult.data ?? [];
   const going = rsvps.filter((r) => r.going);
@@ -40,6 +56,9 @@ export default async function ProfilePage() {
     );
   }
   const inviter = (((inviterResult.data ?? []) as Inviter[])[0]) ?? null;
+  const identity = identityResult.data;
+  const profileFields = profileFieldsResult.data as ProfileFieldsRow;
+  const musicPillGroups = buildMusicPillGroups(profileFields);
 
   return (
     <main className="flex-1 flex flex-col max-w-md mx-auto w-full px-6 py-10 gap-10">
@@ -61,8 +80,54 @@ export default async function ProfilePage() {
         <h1 className="font-display text-4xl leading-none tracking-wide">
           PROFILE
         </h1>
-        <p className="text-sm text-kraft leading-relaxed pt-1">{user.email}</p>
       </div>
+
+      <section className="flex items-center gap-4">
+        <div
+          className="w-16 h-16 rounded-full bg-surface-2 border border-line bg-cover bg-center shrink-0"
+          style={identity?.avatar_url ? { backgroundImage: `url(${identity.avatar_url})` } : undefined}
+        />
+        <div className="space-y-0.5 min-w-0">
+          {identity?.handle ? (
+            <p className="text-sm font-medium truncate">@{identity.handle}</p>
+          ) : (
+            <p className="text-sm text-kraft italic">no handle yet</p>
+          )}
+          <p className="text-xs text-kraft truncate">{user.email}</p>
+          <Link
+            href="/profile/edit"
+            className="font-mono text-[11px] text-riso-pink underline underline-offset-2"
+          >
+            edit profile
+          </Link>
+        </div>
+      </section>
+
+      {profileFields?.bio && (
+        <p className="text-sm text-ink leading-relaxed">{profileFields.bio}</p>
+      )}
+
+      {musicPillGroups.length > 0 && (
+        <section className="space-y-3">
+          {musicPillGroups.map((group) => (
+            <div key={group.label} className="space-y-1.5">
+              <h2 className="font-mono text-[10px] text-kraft uppercase tracking-wide">
+                {group.label}
+              </h2>
+              <div className="flex flex-wrap gap-1.5">
+                {group.items.map((item) => (
+                  <span
+                    key={item}
+                    className="font-mono text-[11px] text-kraft border border-line rounded-full px-2.5 py-1"
+                  >
+                    {item}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ))}
+        </section>
+      )}
 
       <section className="space-y-3">
         <h2 className="font-mono text-[11px] text-kraft uppercase tracking-wide">

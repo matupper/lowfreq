@@ -280,14 +280,20 @@ description, host, live headcount, RSVP (Going) and Save actions.
 an "I Was There" badge here instead of the RSVP button.
 
 ### 4.7 Profile
-Three things live here for MVP: your going/saved shows, your invite
-tree (who you've invited, whether they've joined), and a way to
-generate a new invite stamp to give out. *(Future, Phase 2)* adds a
-fourth: a record of shows you were confirmed at ("I Was There"),
-separate from RSVPs — this is a history of what actually happened, not
-of what you planned to do. *(Future, Phase 6)* adds a now-playing
-badge if the person has connected a streaming account and hasn't
-paused sharing.
+Header shows the identity fields from 4.15 — avatar, handle (or "no
+handle yet" if unset), email, and a bio when set — with an "edit
+profile" link into 4.15. Below that, an optional "music identity"
+block of pill lists (instruments played, favorite artists/albums/songs)
+renders only for whichever categories the person actually filled in;
+an account with none of it set shows no music-identity section at all,
+same "optional fields don't leave visible empty scaffolding" rule as
+the bio. Then: your going/saved shows, your invite tree (who you've
+invited, whether they've joined), and a way to generate a new invite
+stamp to give out. *(Future, Phase 2)* adds a fourth: a record of shows
+you were confirmed at ("I Was There"), separate from RSVPs — this is a
+history of what actually happened, not of what you planned to do.
+*(Future, Phase 6)* adds a now-playing badge if the person has
+connected a streaming account and hasn't paused sharing.
 
 ### 4.8 Generate invite
 Reachable from Profile. Produces a single-use stamp/QR for the member
@@ -333,10 +339,15 @@ idea.
 A single want-ad: what's being looked for, any relevant details, and
 the (rate-limited) contact reveal.
 
-### 4.15 Profile edit *(future)*
-Where the fleshed-out profile fields get set: instruments played,
-favorite bands/albums, bio. Separate from Settings (4.9), which stays
-account-mechanics-only.
+### 4.15 Profile edit
+Built. Where the profile-identity fields get set: avatar photo, handle,
+bio, instruments played, favorite artists/albums/songs — the last four
+optional ("share your music identity"), handle treated as required by
+the form even though the underlying column is nullable (see §6). Avatar
+uploads to the `avatars` Storage bucket and replaces in place (fixed
+per-user filename, cache-busted on the displayed URL) rather than
+accumulating one object per upload. Separate from Settings (4.9), which
+stays account-mechanics-only.
 
 ### 4.16 Venue check-in code *(future)*
 Reachable from a venue's own event management view. Generates a
@@ -374,7 +385,23 @@ and why each exists:
 
 - **users** — id matches Supabase `auth.users.id` directly (no
   separate identity record). `invited_by` links back to the `invites`
-  row that let them in, forming the invite tree.
+  row that let them in, forming the invite tree. `handle` (nullable —
+  existing accounts predate this field and can't be retroactively
+  assigned one, though the edit screen requires one before letting a
+  save go through; unique case-insensitively via a `lower(handle)`
+  unique index rather than a `citext` column, avoiding an extra
+  extension beyond the `pgcrypto` already enabled) and `avatar_url` are
+  the two
+  profile-identity fields added in Phase 6 (§4.15): they live here
+  rather than in `user_profiles` because they're core identity, the
+  same tier as `name`, potentially needed anywhere a user is displayed
+  (event host, invite tree, a future feed) — not just on the profile
+  screen. Both are mutated through narrow security-definer RPCs
+  (`set_handle`/`set_avatar_url`) rather than an RLS `UPDATE` policy on
+  `users`, since `users` also holds `phone`/`invited_by`/`created_at`
+  and RLS can't restrict which *columns* a client changes, only which
+  rows — same reasoning as every other narrow mutation RPC below
+  (`redeem_invite`, `revoke_invite`, `set_rsvp_going`).
 - **invites** — token, status (unused/used/expired/revoked), and an
   `expires_at` column that's unenforced in Phase 1 and enforced in
   Phase 3, along with the `lat`/`lng` columns location verification
@@ -398,6 +425,29 @@ and why each exists:
   `method` (`gps` or `venue_qr`, though only `gps` is produced until the
   venue check-in QR ships in Phase 4) — going and actually-having-gone
   are different facts and neither should overwrite the other.
+- **user_profiles** — **resolves the open question below**: this is
+  the "columns on `users` or a separate table" decision. 1:1 with
+  `users` (`user_id` primary key), holding `bio` (text, optional) and
+  three-plus-one text[] columns — `instruments`, `favorite_artists`,
+  `favorite_albums`, `favorite_songs` — arrays rather than jsonb since
+  each is a flat list of short strings with no nested structure. Split
+  out from `users` rather than added as nullable columns there because
+  this content is optional, list-shaped, and (unlike handle/avatar_url
+  above) only ever read on the profile screen itself — same shape of
+  reasoning as keeping `attendance` separate from `rsvps`. RLS is
+  select/insert/update scoped to `auth.uid() = user_id`, same owner-only
+  posture as `users` (no other user's bio/instruments/favorites are
+  readable yet) — a future public-profile/feed feature should read this
+  through its own narrow security-definer accessor rather than loosening
+  these policies wholesale, the same posture already used for
+  `music_connections`/`now_playing` below.
+- **avatars (Storage bucket)** — a public bucket, one object per user at
+  `<user_id>/avatar.<ext>` (fixed filename so a re-upload overwrites via
+  `upsert` instead of accumulating orphaned objects). Bucket is public
+  and has an explicit public `select` policy, since an avatar needs to
+  actually render; `insert`/`update`/`delete` are restricted to the
+  owning user via the standard Supabase convention of matching the
+  first path segment to `auth.uid()::text`.
 
 ### 6.1 Future entities (not yet in `schema.sql`)
 
@@ -416,10 +466,6 @@ Sketched here for planning purposes — not final column lists:
 - **forum_posts** — want-ad content, posted by a user, with whatever
   rate-limited contact-reveal mechanism ends up designed for the
   tear-off-tab idea.
-- **profile fields** — instruments, favorite bands/albums, bio. Could
-  be columns on `users` or a separate `user_profiles` table; worth
-  deciding once the actual data shape (single values vs. lists) is
-  clearer.
 - **invites, extended** — venue-issued codes reuse the `invites` table
   rather than becoming a new one, with a couple of differences from
   peer stamps: a `venue_id` (nullable — null means a normal peer
@@ -524,7 +570,11 @@ the MVP.
 - [ ] `event_performers` join — attach bands to events as performers
 
 ### Phase 6 — Profiles & forum
-- [ ] Fleshed-out profile fields (instruments, favorites, bio) + edit screen
+- [x] Fleshed-out profile fields (avatar, handle, bio, instruments,
+      favorites) + edit screen (§4.7, §4.15, §6's `user_profiles` /
+      `avatars` bucket decision) — avatar and handle weren't in the
+      original Phase 6 scope but were added alongside this work per
+      captain direction (pivot toward a standard social-app profile)
 - [ ] Forum board + post detail
 - [ ] Contact-reveal mechanism for forum posts (needs its own scoping pass)
 - [ ] Spotify connection + now-playing display (Apple Music: scope
@@ -534,6 +584,15 @@ the MVP.
 - Notifications
 - Following artists/venues
 - Any social layer beyond RSVP/save
+- **Standard social-app navigation shape.** Captain-stated future
+  direction, not yet scoped or built: a bottom navbar for switching
+  between Profile, a Feed, and future pages, with the landing page
+  becoming the existing "Browse Shows" view instead of the current
+  "You're In" welcome screen (§4.1/onboarding-adjacent), which the
+  captain considers to currently serve no purpose. This profile-fields
+  work (§4.7, §4.15) is explicitly the first step toward this pivot,
+  not the navbar/landing-page change itself — those are a separate,
+  later task.
 
 ## 10. Open questions
 
