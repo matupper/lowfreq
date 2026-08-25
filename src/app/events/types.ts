@@ -14,6 +14,10 @@ export type EventWithVenue = {
   goingCount: number;
   myGoing: boolean;
   mySaved: boolean;
+  // "YYYY-MM-DD" in the scene's display time zone (see dateKeyInZone in
+  // src/lib/dateGrouping.ts) — used to bucket the shows list by calendar
+  // day ("TONIGHT" first, then a header per subsequent date).
+  dateKey: string;
   // Whether `startTime` is already in the past, computed server-side (see
   // events/page.tsx) rather than recomputed client-side, so it can't
   // disagree with the server's clock or flip mid-render.

@@ -99,6 +99,28 @@ error, style/sprite/tiles.json all fetch fine). `scripts/copy-maplibre-worker.js
 note for why this class of bug (works in source, breaks at runtime) needs
 a real browser to catch, not just tests/lint/build.
 
+## Landing page & bottom nav
+`/home` (src/app/home/page.tsx + HomeBrowser.tsx) *is* the Browse Shows
+view — not a "you're in" welcome screen with a link into browsing. It
+shows an editorial "TONIGHT" masthead (no personalized greeting) over the
+shows list, date-grouped as the user scrolls: today's shows under
+"TONIGHT", then a small header per subsequent date ("Wednesday, 8/26" —
+see `dateKeyInZone`/`formatDateGroupHeader` in src/lib/dateGrouping.ts,
+which bake in the scene time zone once server-side so the client groups
+by a plain string key). `/events` now just `redirect()`s to `/home` for
+old links/bookmarks — don't add real page logic back there.
+`src/components/BottomNav.tsx` is the app-wide bottom nav ("Poster Bar":
+flush to the bottom edge, 2px solid ink top border, Anton labels, riso-pink
+underline as the active mark — see the nav-landing-direction captain
+decision for the full rationale/rejected alternatives). Tabs are Shows /
+Map / Profile — Map is EventMap.tsx, not a placeholder; there is no Feed
+tab/route. On `/home`, Shows/Map are in-page view state (BottomNav's
+`onSelect`) reusing the same focus-jump mechanism EventCard's "view on
+map" already used between list/map (`focusedEventId`/`mapFocusNonce`);
+Profile always navigates via a real link. From any other route (e.g.
+`/profile`), BottomNav falls back to plain links (`/home`,
+`/home?view=map`) since it has no local view state to switch there.
+
 ## Data model notes
 - public.users.id is the SAME id as auth.users.id (Supabase Auth), linked
   via a foreign key + trigger (handle_new_user). Never manually insert

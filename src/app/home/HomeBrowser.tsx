@@ -1,18 +1,19 @@
 "use client";
 
 import { useEffect, useOptimistic, useState, useTransition } from "react";
-import Link from "next/link";
 import dynamic from "next/dynamic";
-import EventCard from "./EventCard";
-import type { EventWithVenue } from "./types";
+import EventCard from "@/app/events/EventCard";
+import type { EventWithVenue } from "@/app/events/types";
 import { getCurrentLocation } from "@/lib/geolocation-client";
 import type { GeoReading } from "@/lib/location";
-import type { ConfirmAttendanceResult } from "./actions";
+import type { ConfirmAttendanceResult } from "@/app/events/actions";
+import { formatDateGroupHeader } from "@/lib/dateGrouping";
+import BottomNav from "@/components/BottomNav";
 
 // maplibre-gl reaches for `window`/canvas at module load — keep it out of
 // the server bundle and only pull it in once someone actually opens the
 // map tab, not on every list-view page load.
-const EventMap = dynamic(() => import("./EventMap"), {
+const EventMap = dynamic(() => import("@/app/events/EventMap"), {
   ssr: false,
   loading: () => (
     <p className="font-mono text-xs text-kraft py-10 text-center">
@@ -36,6 +37,14 @@ type RsvpAction =
 
 type Props = {
   events: EventWithVenue[];
+  // "YYYY-MM-DD" for today in the scene's display time zone — the shows
+  // list groups by this same key (event.dateKey), and the group matching
+  // it is headed "TONIGHT" instead of a weekday/date (see CLAUDE.md's
+  // "Landing page" section).
+  todayKey: string;
+  // Set by BottomNav's "map" tab when it navigated here from a different
+  // route (e.g. /profile) via ?view=map — see home/page.tsx.
+  initialView: "list" | "map";
   setGoing: (eventId: string, going: boolean) => Promise<void>;
   setSaved: (eventId: string, saved: boolean) => Promise<void>;
   confirmAttendance: (
@@ -43,6 +52,28 @@ type Props = {
     reading: GeoReading | null
   ) => Promise<ConfirmAttendanceResult>;
 };
+
+type EventGroup = { dateKey: string; label: string; events: EventWithVenue[] };
+
+// Events arrive sorted by start_time ascending (see home/page.tsx's query),
+// so same-day events are already contiguous — bucketing just has to notice
+// when dateKey changes, not sort or re-group anything.
+function groupByDate(events: EventWithVenue[], todayKey: string): EventGroup[] {
+  const groups: EventGroup[] = [];
+  for (const event of events) {
+    const current = groups[groups.length - 1];
+    if (current && current.dateKey === event.dateKey) {
+      current.events.push(event);
+    } else {
+      groups.push({
+        dateKey: event.dateKey,
+        label: event.dateKey === todayKey ? "TONIGHT" : formatDateGroupHeader(event.dateKey),
+        events: [event],
+      });
+    }
+  }
+  return groups;
+}
 
 function applyRsvp(events: EventWithVenue[], action: RsvpAction) {
   return events.map((event) => {
@@ -57,8 +88,15 @@ function applyRsvp(events: EventWithVenue[], action: RsvpAction) {
   });
 }
 
-export default function EventsBrowser({ events, setGoing, setSaved, confirmAttendance }: Props) {
-  const [view, setView] = useState<"list" | "map">("list");
+export default function HomeBrowser({
+  events,
+  todayKey,
+  initialView,
+  setGoing,
+  setSaved,
+  confirmAttendance,
+}: Props) {
+  const [view, setView] = useState<"list" | "map">(initialView);
   // Lazily mount the map the first time it's opened, then leave it mounted
   // (just hidden) so switching tabs doesn't tear down and rebuild the
   // maplibre instance/camera position every time.
@@ -142,117 +180,79 @@ export default function EventsBrowser({ events, setGoing, setSaved, confirmAtten
     });
   }
 
-  const upcoming = optimisticEvents.filter((e) => !e.hasStarted);
-  const happeningNow = optimisticEvents.filter((e) => e.hasStarted);
+  const groups = groupByDate(optimisticEvents, todayKey);
 
   return (
-    <main className="flex-1 flex flex-col max-w-md mx-auto w-full px-6 py-10 gap-8">
-      <div className="flex justify-between items-center">
-        <Link href="/home" className="font-mono text-xs text-kraft">
-          &larr; home
-        </Link>
-        <div className="flex border border-line rounded-full p-1 gap-1">
-          <button
-            onClick={() => setView("list")}
-            className={`font-mono text-[11px] uppercase tracking-wide rounded-full px-3 py-1.5 transition-colors ${
-              view === "list" ? "bg-ink text-btn-on-ink" : "text-kraft"
-            }`}
-          >
-            list
-          </button>
-          <button
-            onClick={() => setView("map")}
-            className={`font-mono text-[11px] uppercase tracking-wide rounded-full px-3 py-1.5 transition-colors ${
-              view === "map" ? "bg-ink text-btn-on-ink" : "text-kraft"
-            }`}
-          >
-            map
-          </button>
-        </div>
-      </div>
-
-      <div className="space-y-1">
-        <h1 className="font-display text-4xl leading-none tracking-wide">
-          SHOWS
-        </h1>
-        <p className="text-sm text-kraft leading-relaxed pt-2">
-          Upcoming, soonest first.
-        </p>
-        {rsvpError && (
-          <p className="font-mono text-[11px] text-stamp-red pt-1">
-            {rsvpError}
+    <div className="flex-1 flex flex-col">
+      <main className="flex-1 flex flex-col max-w-md mx-auto w-full px-6 pt-10 pb-28 gap-8">
+        <div className="space-y-1">
+          <h1 className="font-display text-5xl leading-[0.88] tracking-wide">
+            TONIGHT
+          </h1>
+          <p className="font-mono text-[11px] text-kraft uppercase tracking-wide pt-2">
+            {formatDateGroupHeader(todayKey)} &middot; {events.length} shows
           </p>
-        )}
-      </div>
-
-      {/* Map stays mounted (just hidden) once opened, list is conditionally
-          rendered — see the mapMounted comment above. */}
-      {mapMounted && (
-        <div className={view === "map" ? "contents" : "hidden"}>
-          <EventMap
-            events={optimisticEvents}
-            focusedEventId={view === "map" ? focusedEventId : null}
-            focusNonce={mapFocusNonce}
-            setGoing={handleSetGoing}
-            setSaved={handleSetSaved}
-            attendanceStatus={attendanceStatus}
-            onConfirmAttendance={handleConfirmAttendance}
-            onViewInList={handleViewInList}
-          />
+          {rsvpError && (
+            <p className="font-mono text-[11px] text-stamp-red pt-1">
+              {rsvpError}
+            </p>
+          )}
         </div>
-      )}
 
-      {view === "list" &&
-        (optimisticEvents.length === 0 ? (
-          <p className="font-mono text-xs text-kraft">
-            nothing on the calendar yet — check back soon.
-          </p>
-        ) : (
-          <div className="flex flex-col gap-8">
-            {happeningNow.length > 0 && (
-              <div className="space-y-3">
-                <p className="font-mono text-[10px] text-kraft uppercase tracking-wide">
-                  happening now
-                </p>
-                <ul className="flex flex-col gap-6">
-                  {happeningNow.map((event, i) => (
-                    <li key={event.id} id={`event-${event.id}`}>
-                      <EventCard
-                        event={event}
-                        rotation={CARD_ROTATIONS[i % CARD_ROTATIONS.length]}
-                        focused={event.id === focusedEventId}
-                        setGoing={handleSetGoing}
-                        setSaved={handleSetSaved}
-                        attendanceResult={attendanceStatus[event.id]}
-                        onConfirmAttendance={handleConfirmAttendance}
-                        onViewOnMap={handleViewOnMap}
-                      />
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {upcoming.length > 0 && (
-              <ul className="flex flex-col gap-6">
-                {upcoming.map((event, i) => (
-                  <li key={event.id} id={`event-${event.id}`}>
-                    <EventCard
-                      event={event}
-                      rotation={CARD_ROTATIONS[i % CARD_ROTATIONS.length]}
-                      focused={event.id === focusedEventId}
-                      setGoing={handleSetGoing}
-                      setSaved={handleSetSaved}
-                      attendanceResult={attendanceStatus[event.id]}
-                      onConfirmAttendance={handleConfirmAttendance}
-                      onViewOnMap={handleViewOnMap}
-                    />
-                  </li>
-                ))}
-              </ul>
-            )}
+        {/* Map stays mounted (just hidden) once opened, list is
+            conditionally rendered — see the mapMounted comment above. */}
+        {mapMounted && (
+          <div className={view === "map" ? "contents" : "hidden"}>
+            <EventMap
+              events={optimisticEvents}
+              focusedEventId={view === "map" ? focusedEventId : null}
+              focusNonce={mapFocusNonce}
+              setGoing={handleSetGoing}
+              setSaved={handleSetSaved}
+              attendanceStatus={attendanceStatus}
+              onConfirmAttendance={handleConfirmAttendance}
+              onViewInList={handleViewInList}
+            />
           </div>
-        ))}
-    </main>
+        )}
+
+        {view === "list" &&
+          (optimisticEvents.length === 0 ? (
+            <p className="font-mono text-xs text-kraft">
+              nothing on the calendar yet — check back soon.
+            </p>
+          ) : (
+            <div className="flex flex-col gap-8">
+              {groups.map((group) => (
+                <div key={group.dateKey} className="space-y-3">
+                  <p className="font-mono text-[10px] text-kraft uppercase tracking-wide">
+                    {group.label}
+                  </p>
+                  <ul className="flex flex-col gap-6">
+                    {group.events.map((event, i) => (
+                      <li key={event.id} id={`event-${event.id}`}>
+                        <EventCard
+                          event={event}
+                          rotation={CARD_ROTATIONS[i % CARD_ROTATIONS.length]}
+                          focused={event.id === focusedEventId}
+                          setGoing={handleSetGoing}
+                          setSaved={handleSetSaved}
+                          attendanceResult={attendanceStatus[event.id]}
+                          onConfirmAttendance={handleConfirmAttendance}
+                          onViewOnMap={handleViewOnMap}
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          ))}
+      </main>
+      <BottomNav
+        active={view === "map" ? "map" : "shows"}
+        onSelect={(key) => setView(key === "map" ? "map" : "list")}
+      />
+    </div>
   );
 }

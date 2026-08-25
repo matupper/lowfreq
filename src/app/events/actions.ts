@@ -43,7 +43,9 @@ async function updateRsvp(
         });
   if (error) throw error;
 
-  revalidatePath("/events");
+  // The Browse Shows view now lives at the landing route — see
+  // CLAUDE.md's "Landing page" section.
+  revalidatePath("/home");
 }
 
 export async function setGoing(eventId: string, going: boolean) {
@@ -131,6 +133,6 @@ export async function confirmAttendance(
     return { ok: false, reason: "error" };
   }
 
-  revalidatePath("/events");
+  revalidatePath("/home");
   return { ok: true };
 }

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import ThemeToggle from "@/components/ThemeToggle";
+import BottomNav from "@/components/BottomNav";
 import GenerateInviteButton from "@/components/GenerateInviteButton";
 import { signOut } from "@/app/home/actions";
 import { InvitedByCard, InviteeList, type Inviter, type InviteTreeRow } from "./InviteFriends";
@@ -61,109 +62,112 @@ export default async function ProfilePage() {
   const musicPillGroups = buildMusicPillGroups(profileFields);
 
   return (
-    <main className="flex-1 flex flex-col max-w-md mx-auto w-full px-6 py-10 gap-10">
-      <div className="flex justify-between items-center">
-        <Link href="/home" className="font-mono text-xs text-kraft">
-          &larr; home
-        </Link>
-        <div className="flex items-center gap-3">
-          <ThemeToggle />
-          <form action={signOut}>
-            <button className="font-mono text-xs text-kraft border border-line rounded-full px-3 py-1.5 hover:border-kraft transition-colors">
-              log out
-            </button>
-          </form>
-        </div>
-      </div>
-
-      <div className="space-y-1">
-        <h1 className="font-display text-4xl leading-none tracking-wide">
-          PROFILE
-        </h1>
-      </div>
-
-      <section className="flex items-center gap-4">
-        <div
-          className="w-16 h-16 rounded-full bg-surface-2 border border-line bg-cover bg-center shrink-0"
-          style={identity?.avatar_url ? { backgroundImage: `url(${identity.avatar_url})` } : undefined}
-        />
-        <div className="space-y-0.5 min-w-0">
-          {identity?.handle ? (
-            <p className="text-sm font-medium truncate">@{identity.handle}</p>
-          ) : (
-            <p className="text-sm text-kraft italic">no handle yet</p>
-          )}
-          <p className="text-xs text-kraft truncate">{user.email}</p>
-          <Link
-            href="/profile/edit"
-            className="font-mono text-[11px] text-riso-pink underline underline-offset-2"
-          >
-            edit profile
+    <div className="flex-1 flex flex-col">
+      <main className="flex-1 flex flex-col max-w-md mx-auto w-full px-6 pt-10 pb-28 gap-10">
+        <div className="flex justify-between items-center">
+          <Link href="/home" className="font-mono text-xs text-kraft">
+            &larr; home
           </Link>
-        </div>
-      </section>
-
-      {profileFields?.bio && (
-        <p className="text-sm text-ink leading-relaxed">{profileFields.bio}</p>
-      )}
-
-      {musicPillGroups.length > 0 && (
-        <section className="space-y-3">
-          {musicPillGroups.map((group) => (
-            <div key={group.label} className="space-y-1.5">
-              <h2 className="font-mono text-[10px] text-kraft uppercase tracking-wide">
-                {group.label}
-              </h2>
-              <div className="flex flex-wrap gap-1.5">
-                {group.items.map((item) => (
-                  <span
-                    key={item}
-                    className="font-mono text-[11px] text-kraft border border-line rounded-full px-2.5 py-1"
-                  >
-                    {item}
-                  </span>
-                ))}
-              </div>
-            </div>
-          ))}
-        </section>
-      )}
-
-      <section className="space-y-3">
-        <h2 className="font-mono text-[11px] text-kraft uppercase tracking-wide">
-          your shows
-        </h2>
-        {going.length === 0 && saved.length === 0 ? (
-          <p className="text-sm text-kraft">
-            No RSVPs yet.{" "}
-            <Link href="/events" className="underline underline-offset-2">
-              browse shows
-            </Link>
-            .
-          </p>
-        ) : (
-          <ShowList going={going} saved={saved} />
-        )}
-      </section>
-
-      <section className="space-y-3 border-t border-dashed border-line pt-8">
-        <h2 className="font-mono text-[11px] text-kraft uppercase tracking-wide">
-          friends
-        </h2>
-
-        <InvitedByCard inviter={inviter} />
-
-        <div className="space-y-3 pt-1">
-          <div className="flex items-center justify-between">
-            <h3 className="font-mono text-[11px] text-kraft uppercase tracking-wide">
-              who you&rsquo;ve invited
-            </h3>
+          <div className="flex items-center gap-3">
+            <ThemeToggle />
+            <form action={signOut}>
+              <button className="font-mono text-xs text-kraft border border-line rounded-full px-3 py-1.5 hover:border-kraft transition-colors">
+                log out
+              </button>
+            </form>
           </div>
-          <GenerateInviteButton />
-          <InviteeList tree={tree} />
         </div>
-      </section>
-    </main>
+
+        <div className="space-y-1">
+          <h1 className="font-display text-4xl leading-none tracking-wide">
+            PROFILE
+          </h1>
+        </div>
+
+        <section className="flex items-center gap-4">
+          <div
+            className="w-16 h-16 rounded-full bg-surface-2 border border-line bg-cover bg-center shrink-0"
+            style={identity?.avatar_url ? { backgroundImage: `url(${identity.avatar_url})` } : undefined}
+          />
+          <div className="space-y-0.5 min-w-0">
+            {identity?.handle ? (
+              <p className="text-sm font-medium truncate">@{identity.handle}</p>
+            ) : (
+              <p className="text-sm text-kraft italic">no handle yet</p>
+            )}
+            <p className="text-xs text-kraft truncate">{user.email}</p>
+            <Link
+              href="/profile/edit"
+              className="font-mono text-[11px] text-riso-pink underline underline-offset-2"
+            >
+              edit profile
+            </Link>
+          </div>
+        </section>
+
+        {profileFields?.bio && (
+          <p className="text-sm text-ink leading-relaxed">{profileFields.bio}</p>
+        )}
+
+        {musicPillGroups.length > 0 && (
+          <section className="space-y-3">
+            {musicPillGroups.map((group) => (
+              <div key={group.label} className="space-y-1.5">
+                <h2 className="font-mono text-[10px] text-kraft uppercase tracking-wide">
+                  {group.label}
+                </h2>
+                <div className="flex flex-wrap gap-1.5">
+                  {group.items.map((item) => (
+                    <span
+                      key={item}
+                      className="font-mono text-[11px] text-kraft border border-line rounded-full px-2.5 py-1"
+                    >
+                      {item}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </section>
+        )}
+
+        <section className="space-y-3">
+          <h2 className="font-mono text-[11px] text-kraft uppercase tracking-wide">
+            your shows
+          </h2>
+          {going.length === 0 && saved.length === 0 ? (
+            <p className="text-sm text-kraft">
+              No RSVPs yet.{" "}
+              <Link href="/home" className="underline underline-offset-2">
+                browse shows
+              </Link>
+              .
+            </p>
+          ) : (
+            <ShowList going={going} saved={saved} />
+          )}
+        </section>
+
+        <section className="space-y-3 border-t border-dashed border-line pt-8">
+          <h2 className="font-mono text-[11px] text-kraft uppercase tracking-wide">
+            friends
+          </h2>
+
+          <InvitedByCard inviter={inviter} />
+
+          <div className="space-y-3 pt-1">
+            <div className="flex items-center justify-between">
+              <h3 className="font-mono text-[11px] text-kraft uppercase tracking-wide">
+                who you&rsquo;ve invited
+              </h3>
+            </div>
+            <GenerateInviteButton />
+            <InviteeList tree={tree} />
+          </div>
+        </section>
+      </main>
+      <BottomNav active="profile" />
+    </div>
   );
 }
 
@@ -211,7 +215,7 @@ function EventRow({ event }: { event: EventStub | null }) {
   if (!event) return null;
   return (
     <Link
-      href="/events"
+      href="/home"
       className="flex items-center justify-between text-sm py-1"
     >
       <span>{event.title}</span>

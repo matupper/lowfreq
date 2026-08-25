@@ -1,51 +1,110 @@
 import { redirect } from "next/navigation";
-import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { signOut } from "./actions";
+import HomeBrowser from "./HomeBrowser";
+import { confirmAttendance, setGoing, setSaved } from "@/app/events/actions";
+import { ATTENDANCE_WINDOW_HOURS } from "@/app/events/constants";
+import { dateKeyInZone } from "@/lib/dateGrouping";
+import type { EventWithVenue } from "@/app/events/types";
 
-export default async function HomePage() {
+// MVP is single-scene/single-city, so a fixed display timezone (rather
+// than per-user) is the right call for now — see CLAUDE.md build order.
+const SCENE_TIMEZONE = "America/Los_Angeles";
+const timeFormatter = new Intl.DateTimeFormat("en-US", {
+  timeZone: SCENE_TIMEZONE,
+  weekday: "short",
+  month: "short",
+  day: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+});
+
+export default async function HomePage({ searchParams }: PageProps<"/home">) {
   const supabase = await createClient();
-  const { data } = await supabase.auth.getClaims();
-  const claims = data?.claims;
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-  if (!claims) {
+  if (!user) {
     redirect("/login");
   }
 
+  const params = await searchParams;
+  // Set by BottomNav's "map" tab when it's reached from a route other than
+  // /home itself (e.g. /profile) — see BottomNav.tsx's fallback-to-href
+  // comment. On /home, switching tabs is in-page view state instead.
+  const initialView = params?.view === "map" ? "map" : "list";
+
+  const windowStart = new Date();
+  windowStart.setHours(windowStart.getHours() - ATTENDANCE_WINDOW_HOURS);
+
+  const { data: rawEvents } = await supabase
+    .from("events")
+    .select(
+      "id, title, description, start_time, venue:venues(id, name, address, lat, lng)"
+    )
+    .gte("start_time", windowStart.toISOString())
+    .order("start_time", { ascending: true });
+
+  const events = rawEvents ?? [];
+  const eventIds = events.map((e) => e.id);
+
+  const [countsResult, myRsvpsResult, myAttendanceResult] = await Promise.all([
+    eventIds.length
+      ? supabase.rpc("event_going_counts", { event_ids: eventIds })
+      : Promise.resolve({ data: [] as { event_id: string; count: number }[] }),
+    eventIds.length
+      ? supabase.from("rsvps").select("event_id, going, saved").in("event_id", eventIds)
+      : Promise.resolve({ data: [] as { event_id: string; going: boolean; saved: boolean }[] }),
+    eventIds.length
+      ? supabase
+          .from("attendance")
+          .select("event_id, confirmed_at")
+          .in("event_id", eventIds)
+      : Promise.resolve({ data: [] as { event_id: string; confirmed_at: string }[] }),
+  ]);
+
+  const goingCountByEvent = new Map<string, number>();
+  for (const row of countsResult.data ?? []) {
+    goingCountByEvent.set(row.event_id, Number(row.count));
+  }
+
+  const myRsvpByEvent = new Map<string, { going: boolean; saved: boolean }>();
+  for (const row of myRsvpsResult.data ?? []) {
+    myRsvpByEvent.set(row.event_id, { going: row.going, saved: row.saved });
+  }
+
+  const myAttendanceByEvent = new Map<string, string>();
+  for (const row of myAttendanceResult.data ?? []) {
+    myAttendanceByEvent.set(row.event_id, row.confirmed_at);
+  }
+
+  const now = new Date();
+  const todayKey = dateKeyInZone(now, SCENE_TIMEZONE);
+  const eventsWithMeta: EventWithVenue[] = events
+    .filter((e) => e.venue)
+    .map((e) => ({
+      id: e.id,
+      title: e.title,
+      description: e.description,
+      startTime: e.start_time,
+      displayTime: timeFormatter.format(new Date(e.start_time)).toLowerCase(),
+      dateKey: dateKeyInZone(new Date(e.start_time), SCENE_TIMEZONE),
+      venue: Array.isArray(e.venue) ? e.venue[0] : e.venue,
+      goingCount: goingCountByEvent.get(e.id) ?? 0,
+      myGoing: myRsvpByEvent.get(e.id)?.going ?? false,
+      mySaved: myRsvpByEvent.get(e.id)?.saved ?? false,
+      hasStarted: new Date(e.start_time) <= now,
+      attendedAt: myAttendanceByEvent.get(e.id) ?? null,
+    }));
+
   return (
-    <main className="flex-1 flex flex-col max-w-md mx-auto w-full px-6 py-10 gap-10">
-      <div className="flex justify-between items-center">
-        <span className="font-mono text-xs text-kraft">signed in</span>
-        <form action={signOut}>
-          <button className="font-mono text-xs text-kraft border border-line rounded-full px-3 py-1.5 hover:border-kraft transition-colors">
-            log out
-          </button>
-        </form>
-      </div>
-
-      <div className="space-y-1">
-        <h1 className="font-display text-4xl leading-none tracking-wide">
-          YOU&apos;RE IN.
-        </h1>
-        <p className="text-sm text-kraft leading-relaxed max-w-xs pt-4">
-          {claims.email} — founder account. Invite creation is next.
-        </p>
-      </div>
-
-      <div className="flex flex-col gap-2.5">
-        <Link
-          href="/events"
-          className="bg-ink text-btn-on-ink rounded-[2px] py-3.5 text-sm font-medium text-center"
-        >
-          Browse shows
-        </Link>
-        <Link
-          href="/profile"
-          className="text-kraft font-mono text-xs py-1.5 text-center"
-        >
-          Profile &amp; invites
-        </Link>
-      </div>
-    </main>
+    <HomeBrowser
+      events={eventsWithMeta}
+      todayKey={todayKey}
+      initialView={initialView}
+      setGoing={setGoing}
+      setSaved={setSaved}
+      confirmAttendance={confirmAttendance}
+    />
   );
 }

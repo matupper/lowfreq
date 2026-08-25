@@ -98,6 +98,28 @@ This machine also runs multiple concurrent agent sessions sharing the
 default chrome-devtools-axi bridge/port — set `CHROME_DEVTOOLS_AXI_SESSION`
 to a unique name to avoid colliding with another session's browser.
 
+A second, distinct failure mode (seen 2026-08-25): every command errors with
+`MCP error -32602: Input validation error: Invalid arguments for tool
+take_snapshot: Required at pageId` (also hits `evaluate_script`,
+`screenshot` silently no-ops without writing a file), and `pages` never
+marks any tab `selected: true` — happens even with the `--browserUrl`
+workaround above and after a full bridge restart, so it isn't specific to
+one launch mode. Root cause: `chrome-devtools-axi` (0.1.30 at time of
+writing) bootstraps `chrome-devtools-mcp` via `npx -y
+chrome-devtools-mcp@latest`, and mcp 1.8.0 added a required `pageId` param
+this axi version doesn't yet send. Fix: pin to a known-good mcp version
+instead of `@latest` —
+```
+mkdir -p /some/scratch/dir/cdm-1.7.0 && cd /some/scratch/dir/cdm-1.7.0
+npm install chrome-devtools-mcp@1.7.0 --no-save
+export CHROME_DEVTOOLS_AXI_MCP_PATH="$PWD/node_modules/chrome-devtools-mcp/build/src/bin/chrome-devtools-mcp.js"
+chrome-devtools-axi start   # combine with CHROME_DEVTOOLS_AXI_BROWSER_URL above if also hitting the first issue
+```
+Re-check the installed `chrome-devtools-mcp` version (`npm view
+chrome-devtools-mcp version`) before assuming 1.7.0 is still the right pin —
+a future `chrome-devtools-axi` release may catch up and make this
+unnecessary.
+
 ## Mutating specific `users` columns: RPC, not an RLS UPDATE policy
 
 `users` has no RLS `update` policy, and that's deliberate — the table also

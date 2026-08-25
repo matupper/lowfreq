@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import EventsBrowser from "./EventsBrowser";
-import type { EventWithVenue } from "./types";
+import HomeBrowser from "./HomeBrowser";
+import type { EventWithVenue } from "@/app/events/types";
 
-// jsdom doesn't implement scrollIntoView — EventsBrowser's "scroll to the
+// jsdom doesn't implement scrollIntoView — HomeBrowser's "scroll to the
 // focused event" effect (used by the map's "view in list" jump) calls it,
 // so stub it for this file's tests.
 HTMLElement.prototype.scrollIntoView = vi.fn();
@@ -14,7 +14,7 @@ vi.mock("@/lib/geolocation-client", () => ({
 }));
 
 // jsdom has no WebGL/canvas support, so the real maplibre-gl (loaded by
-// EventMap, which EventsBrowser pulls in via next/dynamic) can't run in
+// EventMap, which HomeBrowser pulls in via next/dynamic) can't run in
 // tests — see the fuller version of this mock's reasoning in
 // EventMap.test.tsx. Defined inline since vi.mock is hoisted.
 vi.mock("maplibre-gl", () => {
@@ -108,6 +108,7 @@ function makeEvent(overrides: Partial<EventWithVenue> = {}): EventWithVenue {
     description: null,
     startTime: "2026-09-01T02:00:00Z",
     displayTime: "sep 1",
+    dateKey: "2026-09-01",
     venue: { id: "venue-1", name: "The Basement", address: null, lat: 0, lng: 0 },
     goingCount: 0,
     myGoing: false,
@@ -130,7 +131,7 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-describe("EventsBrowser RSVP optimistic update", () => {
+describe("HomeBrowser RSVP optimistic update", () => {
   afterEach(() => {
     cleanup();
     getCurrentLocation.mockReset();
@@ -143,7 +144,9 @@ describe("EventsBrowser RSVP optimistic update", () => {
     const confirmAttendance = vi.fn();
 
     render(
-      <EventsBrowser
+      <HomeBrowser
+        todayKey="2026-09-01"
+        initialView="list"
         events={[makeEvent()]}
         setGoing={setGoing}
         setSaved={setSaved}
@@ -171,7 +174,9 @@ describe("EventsBrowser RSVP optimistic update", () => {
     const confirmAttendance = vi.fn();
 
     render(
-      <EventsBrowser
+      <HomeBrowser
+        todayKey="2026-09-01"
+        initialView="list"
         events={[makeEvent()]}
         setGoing={setGoing}
         setSaved={setSaved}
@@ -198,7 +203,9 @@ describe("EventsBrowser RSVP optimistic update", () => {
     const confirmAttendance = vi.fn();
 
     render(
-      <EventsBrowser
+      <HomeBrowser
+        todayKey="2026-09-01"
+        initialView="list"
         events={[makeEvent({ myGoing: true, goingCount: 1 })]}
         setGoing={setGoing}
         setSaved={setSaved}
@@ -218,7 +225,9 @@ describe("EventsBrowser RSVP optimistic update", () => {
     const confirmAttendance = vi.fn();
 
     render(
-      <EventsBrowser
+      <HomeBrowser
+        todayKey="2026-09-01"
+        initialView="list"
         events={[makeEvent()]}
         setGoing={setGoing}
         setSaved={setSaved}
@@ -235,7 +244,7 @@ describe("EventsBrowser RSVP optimistic update", () => {
   });
 });
 
-describe("EventsBrowser attendance ('I Was There')", () => {
+describe("HomeBrowser attendance ('I Was There')", () => {
   afterEach(() => {
     cleanup();
     getCurrentLocation.mockReset();
@@ -243,7 +252,9 @@ describe("EventsBrowser attendance ('I Was There')", () => {
 
   it("shows the going button, not I Was There, for an event that hasn't started", () => {
     render(
-      <EventsBrowser
+      <HomeBrowser
+        todayKey="2026-09-01"
+        initialView="list"
         events={[makeEvent({ hasStarted: false })]}
         setGoing={vi.fn()}
         setSaved={vi.fn()}
@@ -257,7 +268,9 @@ describe("EventsBrowser attendance ('I Was There')", () => {
 
   it("shows an I Was There button instead of going once the event has started", () => {
     render(
-      <EventsBrowser
+      <HomeBrowser
+        todayKey="2026-09-01"
+        initialView="list"
         events={[makeEvent({ hasStarted: true })]}
         setGoing={vi.fn()}
         setSaved={vi.fn()}
@@ -271,7 +284,9 @@ describe("EventsBrowser attendance ('I Was There')", () => {
 
   it("shows a confirmed badge instead of the button once attendance is already recorded", () => {
     render(
-      <EventsBrowser
+      <HomeBrowser
+        todayKey="2026-09-01"
+        initialView="list"
         events={[makeEvent({ hasStarted: true, attendedAt: "2026-08-22T10:00:00Z" })]}
         setGoing={vi.fn()}
         setSaved={vi.fn()}
@@ -291,7 +306,9 @@ describe("EventsBrowser attendance ('I Was There')", () => {
     const confirmAttendance = vi.fn().mockResolvedValue({ ok: true });
 
     render(
-      <EventsBrowser
+      <HomeBrowser
+        todayKey="2026-09-01"
+        initialView="list"
         events={[makeEvent({ hasStarted: true })]}
         setGoing={vi.fn()}
         setSaved={vi.fn()}
@@ -315,7 +332,9 @@ describe("EventsBrowser attendance ('I Was There')", () => {
     const confirmAttendance = vi.fn().mockResolvedValue({ ok: false, reason: "no_location" });
 
     render(
-      <EventsBrowser
+      <HomeBrowser
+        todayKey="2026-09-01"
+        initialView="list"
         events={[makeEvent({ hasStarted: true })]}
         setGoing={vi.fn()}
         setSaved={vi.fn()}
@@ -344,7 +363,9 @@ describe("EventsBrowser attendance ('I Was There')", () => {
     const confirmAttendance = vi.fn().mockResolvedValue({ ok: false, reason: "too_far" });
 
     render(
-      <EventsBrowser
+      <HomeBrowser
+        todayKey="2026-09-01"
+        initialView="list"
         events={[makeEvent({ hasStarted: true })]}
         setGoing={vi.fn()}
         setSaved={vi.fn()}
@@ -369,7 +390,9 @@ describe("EventsBrowser attendance ('I Was There')", () => {
     const confirmAttendance = vi.fn().mockResolvedValue({ ok: false, reason: "too_late" });
 
     render(
-      <EventsBrowser
+      <HomeBrowser
+        todayKey="2026-09-01"
+        initialView="list"
         events={[makeEvent({ hasStarted: true })]}
         setGoing={vi.fn()}
         setSaved={vi.fn()}
@@ -385,12 +408,62 @@ describe("EventsBrowser attendance ('I Was There')", () => {
   });
 });
 
-describe("EventsBrowser list <-> map navigation", () => {
+describe("HomeBrowser date grouping", () => {
+  afterEach(() => cleanup());
+
+  it("labels today's group TONIGHT and gives later dates a weekday/date header", () => {
+    render(
+      <HomeBrowser
+        todayKey="2026-09-01"
+        initialView="list"
+        events={[
+          makeEvent({ id: "event-1", title: "Basement Show", dateKey: "2026-09-01" }),
+          makeEvent({ id: "event-2", title: "Warehouse Set", dateKey: "2026-09-02" }),
+        ]}
+        setGoing={vi.fn()}
+        setSaved={vi.fn()}
+        confirmAttendance={vi.fn()}
+      />
+    );
+
+    // "TONIGHT" appears twice by design — the page's editorial masthead
+    // (an h1) and, separately, the first date group's small section label.
+    expect(screen.getByRole("heading", { name: "TONIGHT" })).toBeTruthy();
+    expect(screen.getAllByText("TONIGHT").length).toBe(2);
+    expect(screen.getByText("Wednesday, 9/2")).toBeTruthy();
+    expect(screen.queryByText(/happening now/i)).toBeNull();
+  });
+
+  it("groups same-day events under a single header instead of repeating it", () => {
+    render(
+      <HomeBrowser
+        todayKey="2026-09-01"
+        initialView="list"
+        events={[
+          makeEvent({ id: "event-1", title: "Basement Show", dateKey: "2026-09-01" }),
+          makeEvent({ id: "event-2", title: "Loft Show", dateKey: "2026-09-01" }),
+        ]}
+        setGoing={vi.fn()}
+        setSaved={vi.fn()}
+        confirmAttendance={vi.fn()}
+      />
+    );
+
+    // Masthead h1 + a single group label — not one label per event.
+    expect(screen.getAllByText("TONIGHT").length).toBe(2);
+    expect(screen.getByText("Basement Show")).toBeTruthy();
+    expect(screen.getByText("Loft Show")).toBeTruthy();
+  });
+});
+
+describe("HomeBrowser list <-> map navigation", () => {
   afterEach(() => cleanup());
 
   it("jumps from a list card to that event's pin on the map", async () => {
     render(
-      <EventsBrowser
+      <HomeBrowser
+        todayKey="2026-09-01"
+        initialView="list"
         events={[makeEvent()]}
         setGoing={vi.fn()}
         setSaved={vi.fn()}
@@ -403,12 +476,14 @@ describe("EventsBrowser list <-> map navigation", () => {
     // Map tab is now active and the event's card is already expanded —
     // not just a blank map or a switched tab with no context.
     await waitFor(() => expect(screen.getAllByText("Basement Show").length).toBeGreaterThan(0));
-    expect(screen.getByRole("button", { name: "map" }).className).toContain("bg-ink");
+    expect(screen.getByRole("button", { name: "map" }).getAttribute("aria-current")).toBe("page");
   });
 
   it("jumps from the map's expanded card back to the matching list card", async () => {
     render(
-      <EventsBrowser
+      <HomeBrowser
+        todayKey="2026-09-01"
+        initialView="list"
         events={[makeEvent()]}
         setGoing={vi.fn()}
         setSaved={vi.fn()}
@@ -421,7 +496,9 @@ describe("EventsBrowser list <-> map navigation", () => {
     fireEvent.click(viewInList);
 
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "list" }).className).toContain("bg-ink")
+      expect(screen.getByRole("button", { name: "shows" }).getAttribute("aria-current")).toBe(
+        "page"
+      )
     );
     // The map view stays mounted (just hidden) in the background so its
     // camera/popup state survives tab switches — scope to the list card
@@ -429,5 +506,45 @@ describe("EventsBrowser list <-> map navigation", () => {
     // since the map's own copy of this event's card is still in the DOM.
     const listCard = document.getElementById("event-event-1")!;
     expect(within(listCard).getByRole("button", { name: "going" })).toBeTruthy();
+  });
+
+  it("switches to the map tab via the bottom nav, independent of any card's 'view on map'", async () => {
+    render(
+      <HomeBrowser
+        todayKey="2026-09-01"
+        initialView="list"
+        events={[makeEvent()]}
+        setGoing={vi.fn()}
+        setSaved={vi.fn()}
+        confirmAttendance={vi.fn()}
+      />
+    );
+
+    expect(screen.getByRole("button", { name: "shows" }).getAttribute("aria-current")).toBe(
+      "page"
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "map" }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "map" }).getAttribute("aria-current")).toBe(
+        "page"
+      )
+    );
+  });
+
+  it("renders the profile tab as a link to /profile rather than in-page state", () => {
+    render(
+      <HomeBrowser
+        todayKey="2026-09-01"
+        initialView="list"
+        events={[makeEvent()]}
+        setGoing={vi.fn()}
+        setSaved={vi.fn()}
+        confirmAttendance={vi.fn()}
+      />
+    );
+
+    expect(screen.getByRole("link", { name: "profile" }).getAttribute("href")).toBe("/profile");
   });
 });
