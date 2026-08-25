@@ -40,6 +40,32 @@ relying on `cookieOptions.maxAge` again — a future `@supabase/ssr` upgrade
 may fix this, at which point the `setAll` override becomes redundant but
 harmless.
 
+## Server Actions that call Supabase auth methods implicitly refresh the current page
+
+Any `@supabase/ssr` auth call (`signUp`, `signInWithPassword`, `signOut`, a
+session refresh) writes cookies via the `setAll` callback in
+`src/lib/supabase/server.ts`. Per Next.js's docs on mutating data ("Cookies"
+section, `node_modules/next/dist/docs/01-app/01-getting-started/07-mutating-data.md`),
+setting/deleting a cookie inside a Server Action makes Next.js re-render the
+current route's Server Components — same mechanism as calling `refresh()`
+explicitly, but implicit. If a page derives what to render from mutable DB
+state (e.g. `src/app/signup/page.tsx` checking whether an invite token is
+still `unused`), and the Server Action just mutated that same state (e.g.
+`redeem_invite` marking it `used`), the implicit re-render can swap the
+page's whole subtree — discarding any client-local `useActionState` result
+that was about to be shown in its place, with no error and no client-visible
+signal that it happened. This bit `src/app/signup/actions.ts`'s
+`registerWithInvite`: the "signup succeeded, no session because email
+confirmation is required" outcome used to return inline state for
+`RegisterForm` to render, and got silently replaced by `signup/page.tsx`'s
+"invite already used" screen. Fix pattern: when a Server Action mutates
+state a wrapping page re-derives from, don't return outcome-describing state
+for a sibling/child Client Component to render on the same route —
+`redirect()` to a route that isn't gated on that same state instead (see
+`registerWithInvite`'s redirect to `/signup/check-email`). A `redirect()`
+call itself is safe even after such a cookie write, since the browser
+navigates away entirely rather than re-rendering the current route.
+
 ## Fresh worktree: `npm install` before trusting a "module not found"
 
 A freshly created git worktree here can have a `node_modules/` that's out

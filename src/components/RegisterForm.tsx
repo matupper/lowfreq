@@ -71,22 +71,6 @@ export default function RegisterForm({ token }: { token: string }) {
     );
   }
 
-  if (state && "message" in state) {
-    return (
-      <main className="flex-1 flex flex-col max-w-md mx-auto w-full px-6 py-10 gap-6 justify-center">
-        <h1 className="font-display text-3xl leading-none tracking-wide">
-          CHECK YOUR EMAIL
-        </h1>
-        <p className="text-sm text-kraft leading-relaxed max-w-xs">
-          {state.message}
-        </p>
-        <Link href="/login" className="font-mono text-xs text-riso-pink">
-          back to log in
-        </Link>
-      </main>
-    );
-  }
-
   if (state && "invalidInvite" in state) {
     return (
       <main className="flex-1 flex flex-col max-w-md mx-auto w-full px-6 py-10 gap-6 justify-center">
