@@ -112,11 +112,13 @@ a real browser to catch, not just tests/lint/build.
   a venue is a later feature, not MVP.
 
 ## Build order
-Auth, event browse/RSVP, invite gating, and location verification
-(expiry enforcement, GPS-checked invites, attendance/"I Was There") are
-all built, including the attendance denied-location decision (see
-"Attendance" above). For what's next, see docs/designdoc.md §9 (Phase 4
-onward).
+Auth, event browse/RSVP, invite gating, location verification (expiry
+enforcement, GPS-checked invites, attendance/"I Was There"), and profile
+fields (avatar, handle, bio, music identity — see docs/designdoc.md
+§4.7/§4.15 and AGENTS.md's notes on the `users`-mutation RPC pattern and
+avatar storage) are all built, including the attendance denied-location
+decision (see "Attendance" above). For what's next, see
+docs/designdoc.md §9.
 
 Signed-in sessions persist across browser restarts (~90 days) via a
 `maxAge` override on the Supabase session cookie — see
