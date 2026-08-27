@@ -120,6 +120,24 @@ chrome-devtools-mcp version`) before assuming 1.7.0 is still the right pin —
 a future `chrome-devtools-axi` release may catch up and make this
 unnecessary.
 
+## Browser-testing signup: real domain required, and email sends are rate-limited
+
+Supabase Auth on `lowfreq-dev` rejects signup with a "Email address is
+invalid" error for placeholder domains like `example.com` or a made-up
+`*.dev` domain — use a real, deliverable domain (e.g. your own address with
+`+something` tagging) when exercising the signup form end-to-end in a
+browser. Each signup attempt also sends a real confirmation email even on
+failure paths, and the project's free-tier send quota is easy to exhaust
+across a few retries — expect "email rate limit exceeded" after a handful of
+attempts in one session, with no visible reset countdown. To finish testing
+a signed-in flow without waiting on a real inbox or the quota, confirm the
+test account directly instead of clicking the email link: `update
+auth.users set email_confirmed_at = now() where email = '<test address>'`
+via the Supabase SQL tool. A manually-inserted `invites` row for the test
+signup needs its `token` in the exact form `normalizeInviteToken()`
+(`src/lib/invites.ts`) would produce from the URL — uppercase, no
+separators — since the redemption lookup does a raw string match.
+
 ## Mutating specific `users` columns: RPC, not an RLS UPDATE policy
 
 `users` has no RLS `update` policy, and that's deliberate — the table also
