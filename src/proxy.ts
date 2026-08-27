@@ -2,7 +2,11 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { SESSION_COOKIE_MAX_AGE_SECONDS } from "@/lib/supabase/cookie-options";
 
-const PROTECTED_PATHS = ["/home", "/events", "/profile"];
+// /checkin/[token] is deliberately NOT here — it's a public route (see
+// docs/designdoc.md §3.1/§9 Phase 4): a venue's printed QR is scanned by a
+// phone's own camera app with no session guaranteed, and the page itself
+// branches on session presence rather than gating at the proxy.
+const PROTECTED_PATHS = ["/home", "/events", "/profile", "/venues", "/admin"];
 
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });

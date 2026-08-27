@@ -71,13 +71,19 @@ export type ConfirmAttendanceResult =
 // unsupported, timed out). docs/designdoc.md §10 raised this as an open
 // question — a legitimately-attending user with bad signal (e.g. a
 // basement venue) would otherwise be stuck. Captain decision: strict
-// GPS-or-nothing, no manual fallback, for now. Revisit once the
-// venue-printed check-in QR (docs/designdoc.md §3.1, Phase 4) ships, since
-// that gives bad-signal venues a real alternative confirmation path
-// (`method: 'venue_qr'` already exists on `attendance` for exactly this).
+// GPS-or-nothing, no manual fallback, for the `gps` method.
+//
+// `method: "venue_qr"` (Phase 4, docs/designdoc.md §3.1/§4.16) is the
+// alternative that decision anticipated: a code scanned from the venue's
+// own printed poster, via /checkin/[token], is GPS-independent by design —
+// being physically able to scan it (and the invite's event-scoped expiry,
+// enforced upstream by redeem_invite before this is ever called) is what
+// verifies presence instead. `reading` is ignored for this method; only
+// the start-time/attendance-window checks below still apply.
 export async function confirmAttendance(
   eventId: string,
-  reading: GeoReading | null
+  reading: GeoReading | null,
+  method: "gps" | "venue_qr" = "gps"
 ): Promise<ConfirmAttendanceResult> {
   const supabase = await createClient();
   const {
@@ -109,24 +115,26 @@ export async function confirmAttendance(
     return { ok: false, reason: "too_late" };
   }
 
-  if (!reading) {
-    return { ok: false, reason: "no_location" };
-  }
+  if (method === "gps") {
+    if (!reading) {
+      return { ok: false, reason: "no_location" };
+    }
 
-  const venue = Array.isArray(event.venue) ? event.venue[0] : event.venue;
-  if (!venue) {
-    return { ok: false, reason: "error" };
-  }
+    const venue = Array.isArray(event.venue) ? event.venue[0] : event.venue;
+    if (!venue) {
+      return { ok: false, reason: "error" };
+    }
 
-  const proximity = checkProximity(reading, venue);
-  if (!proximity.ok) {
-    return { ok: false, reason: proximity.reason };
+    const proximity = checkProximity(reading, venue);
+    if (!proximity.ok) {
+      return { ok: false, reason: proximity.reason };
+    }
   }
 
   const { error } = await supabase
     .from("attendance")
     .upsert(
-      { user_id: user.id, event_id: eventId, method: "gps" },
+      { user_id: user.id, event_id: eventId, method },
       { onConflict: "user_id,event_id", ignoreDuplicates: true }
     );
   if (error) {

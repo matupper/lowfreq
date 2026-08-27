@@ -31,26 +31,36 @@ export default async function ProfilePage() {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const [rsvpsResult, treeResult, inviterResult, identityResult, profileFieldsResult] =
-    await Promise.all([
-      supabase
-        .from("rsvps")
-        .select("going, saved, event:events(id, title, start_time)")
-        .eq("user_id", user.id),
-      supabase.rpc("get_invite_tree"),
-      supabase.rpc("get_my_inviter"),
-      supabase.from("users").select("handle, avatar_url").eq("id", user.id).single(),
-      supabase
-        .from("user_profiles")
-        .select("bio, instruments, favorite_artists, favorite_albums, favorite_songs")
-        .eq("user_id", user.id)
-        .maybeSingle(),
-    ]);
+  const [
+    rsvpsResult,
+    treeResult,
+    inviterResult,
+    identityResult,
+    profileFieldsResult,
+    ownedVenueResult,
+  ] = await Promise.all([
+    supabase
+      .from("rsvps")
+      .select("going, saved, event:events(id, title, start_time)")
+      .eq("user_id", user.id),
+    supabase.rpc("get_invite_tree"),
+    supabase.rpc("get_my_inviter"),
+    supabase.from("users").select("handle, avatar_url").eq("id", user.id).single(),
+    supabase
+      .from("user_profiles")
+      .select("bio, instruments, favorite_artists, favorite_albums, favorite_songs")
+      .eq("user_id", user.id)
+      .maybeSingle(),
+    // Only used to decide which of "claim a venue"/"manage your venue" to
+    // show below — a venue owner has already been through the claim flow.
+    supabase.from("venues").select("id").eq("owner_id", user.id).limit(1),
+  ]);
 
   const rsvps = rsvpsResult.data ?? [];
   const going = rsvps.filter((r) => r.going);
   const saved = rsvps.filter((r) => r.saved);
   const tree = (treeResult.data ?? []) as InviteTreeRow[];
+  const ownsVenue = (ownedVenueResult.data ?? []).length > 0;
   if (inviterResult.error) {
     throw new Error(
       `Failed to load inviter: ${inviterResult.error.message}`,
@@ -165,6 +175,24 @@ export default async function ProfilePage() {
             <InviteeList tree={tree} />
           </div>
         </section>
+
+        <div className="pt-2">
+          {ownsVenue ? (
+            <Link
+              href="/venues/mine"
+              className="font-mono text-[11px] text-kraft underline underline-offset-2"
+            >
+              manage your venue
+            </Link>
+          ) : (
+            <Link
+              href="/venues/claim"
+              className="font-mono text-[11px] text-kraft underline underline-offset-2"
+            >
+              run a venue? claim it
+            </Link>
+          )}
+        </div>
       </main>
       <BottomNav active="profile" />
     </div>
