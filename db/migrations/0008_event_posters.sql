@@ -22,7 +22,7 @@ alter table events add column poster_url text;
 
 create policy "hosts can edit their own unapproved events" on events
   for update using (auth.uid() = host_id and status in ('pending', 'rejected'))
-  with check (auth.uid() = host_id);
+  with check (auth.uid() = host_id and status in ('pending', 'rejected'));
 
 insert into storage.buckets (id, name, public)
 values ('event-posters', 'event-posters', true)

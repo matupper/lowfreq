@@ -8,31 +8,46 @@ const POSTER_EXTENSION_BY_TYPE: Record<string, string> = {
   "image/gif": "gif",
 };
 
-// Adapts profile/edit/actions.ts's proven avatar-upload pattern to a
-// per-event (not per-user) storage path — see
-// db/migrations/0008_event_posters.sql. A missing file isn't an error, a
-// poster is optional. Returns an error message on failure, null otherwise.
-export async function uploadEventPoster(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  eventId: string,
-  formData: FormData
-): Promise<string | null> {
+export type PosterValidation =
+  | { hasPoster: false }
+  | { hasPoster: true; error: string }
+  | { hasPoster: true; error: null; file: File; extension: string };
+
+// Checks the file-type/size constraints the <input accept> is only a UI
+// hint for. Deliberately takes no DB/storage dependency so callers (e.g.
+// events/new/actions.ts) can validate before writing anything, instead of
+// discovering an invalid poster only after an events row already exists.
+export function validatePosterFile(formData: FormData): PosterValidation {
   const posterFile = formData.get("poster");
   const hasPoster = posterFile instanceof File && posterFile.size > 0;
-  if (!hasPoster) return null;
+  if (!hasPoster) return { hasPoster: false };
 
   if (posterFile.size > MAX_POSTER_BYTES) {
-    return "Poster image must be under 5MB.";
+    return { hasPoster: true, error: "Poster image must be under 5MB." };
   }
   const extension = POSTER_EXTENSION_BY_TYPE[posterFile.type];
   if (!extension) {
-    return "Poster must be a JPEG, PNG, WebP, or GIF image.";
+    return { hasPoster: true, error: "Poster must be a JPEG, PNG, WebP, or GIF image." };
   }
 
+  return { hasPoster: true, error: null, file: posterFile, extension };
+}
+
+// Adapts profile/edit/actions.ts's proven avatar-upload pattern to a
+// per-event (not per-user) storage path — see
+// db/migrations/0008_event_posters.sql. Callers must have already validated
+// the file via validatePosterFile. Returns an error message on failure,
+// null otherwise.
+export async function uploadEventPoster(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  eventId: string,
+  file: File,
+  extension: string
+): Promise<string | null> {
   const path = `${eventId}/poster.${extension}`;
   const { error: uploadError } = await supabase.storage
     .from("event-posters")
-    .upload(path, posterFile, { upsert: true, contentType: posterFile.type });
+    .upload(path, file, { upsert: true, contentType: file.type });
   if (uploadError) {
     return "Couldn't upload that image. Try again.";
   }

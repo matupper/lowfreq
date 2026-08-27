@@ -192,7 +192,12 @@ create policy "users can submit pending events" on events
 -- db/migrations/0008_event_posters.sql.
 create policy "hosts can edit their own unapproved events" on events
   for update using (auth.uid() = host_id and status in ('pending', 'rejected'))
-  with check (auth.uid() = host_id);
+  with check (auth.uid() = host_id and status in ('pending', 'rejected'));
+-- Lets createEvent (src/app/events/new/actions.ts) roll back its own insert
+-- if the follow-up poster upload fails, so a retry doesn't leave a
+-- duplicate pending submission. See db/migrations/0009_event_submission_rollback.sql.
+create policy "hosts can delete their own pending submissions" on events
+  for delete using (auth.uid() = host_id and status = 'pending');
 create policy "venues are publicly readable" on venues for select using (true);
 create policy "users can create their own invites" on invites for insert with check (auth.uid() = created_by);
 create policy "users can view their own invites" on invites for select using (auth.uid() = created_by);

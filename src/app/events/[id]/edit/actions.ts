@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { parseEventFields, type EventFormState } from "@/app/events/eventFormState";
-import { uploadEventPoster } from "@/app/events/posterUpload";
+import { uploadEventPoster, validatePosterFile } from "@/app/events/posterUpload";
 
 // Relies on the "hosts can edit their own unapproved events" RLS policy
 // (auth.uid() = host_id and status in ('pending', 'rejected')) rather than
@@ -24,6 +24,11 @@ export async function updateEvent(
   const parsed = parseEventFields(formData);
   if (!parsed.ok) {
     return { error: parsed.error };
+  }
+
+  const poster = validatePosterFile(formData);
+  if (poster.hasPoster && poster.error) {
+    return { error: poster.error };
   }
 
   // A rejected submission goes back to 'pending' on save — editing it is
@@ -47,9 +52,11 @@ export async function updateEvent(
     return { error: "Couldn't save that submission. Try again." };
   }
 
-  const posterError = await uploadEventPoster(supabase, eventId, formData);
-  if (posterError) {
-    return { error: posterError };
+  if (poster.hasPoster && poster.error === null) {
+    const posterError = await uploadEventPoster(supabase, eventId, poster.file, poster.extension);
+    if (posterError) {
+      return { error: posterError };
+    }
   }
 
   redirect("/profile");

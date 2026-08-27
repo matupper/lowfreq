@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { parseEventFields, type EventFormState } from "@/app/events/eventFormState";
-import { uploadEventPoster } from "@/app/events/posterUpload";
+import { uploadEventPoster, validatePosterFile } from "@/app/events/posterUpload";
 
 // Submissions always land 'pending' regardless of what a client sends —
 // the events insert RLS policy also enforces this server-side (see
@@ -24,6 +24,11 @@ export async function createEvent(
     return { error: parsed.error };
   }
 
+  const poster = validatePosterFile(formData);
+  if (poster.hasPoster && poster.error) {
+    return { error: poster.error };
+  }
+
   const { data: inserted, error } = await supabase
     .from("events")
     .insert({
@@ -40,9 +45,14 @@ export async function createEvent(
     return { error: "Couldn't submit that event. Try again." };
   }
 
-  const posterError = await uploadEventPoster(supabase, inserted.id, formData);
-  if (posterError) {
-    return { error: posterError };
+  if (poster.hasPoster && poster.error === null) {
+    const posterError = await uploadEventPoster(supabase, inserted.id, poster.file, poster.extension);
+    if (posterError) {
+      // Undo the insert so a retry doesn't create a second pending
+      // submission alongside this one.
+      await supabase.from("events").delete().eq("id", inserted.id);
+      return { error: posterError };
+    }
   }
 
   redirect("/profile");
