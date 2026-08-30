@@ -22,6 +22,11 @@ authoritative for what's actually deployed either. Apply drift with
 PR but were never applied to `lowfreq-dev`, silently breaking invite
 registration, location-verified invites, and attendance end to end while
 existing code review, tests, and docs all treated the feature as shipped.
+Editing a migration file after it's already been applied doesn't change
+what's live either — the database has no record that the file changed.
+If a bug is found in an already-applied migration's SQL, write a new
+migration that fixes it live instead of editing the old file in place
+(see `db/migrations/0010_fix_event_edit_with_check.sql`).
 
 ## Supabase session cookies: `cookieOptions.maxAge` is a no-op
 
