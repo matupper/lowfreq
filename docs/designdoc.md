@@ -323,11 +323,13 @@ Submitted events enter as `pending` and aren't visible to anyone else
 until an admin approves them — the host should see a clear "awaiting
 approval" state rather than assuming it's already live.
 
-### 4.12a Admin review queue *(future)*
-Not user-facing. A simple internal view listing pending events and
-venue claims for approval/rejection. Doesn't need real design
-investment early on — a plain table is fine until volume says
-otherwise.
+### 4.12a Admin review queue
+Built for venue claims (`src/app/admin/page.tsx`): a plain table
+listing pending claims with approve/reject actions, gated on
+`users.is_admin`. Pending-event review is still *(future)* — it lands
+once user-submitted events (§9 Phase 4) ships alongside it. Doesn't
+need real design investment early on — a plain table is fine until
+volume says otherwise.
 
 ### 4.13 Forum board *(future)*
 Scrollable board of want-ad-style posts ("looking for a drummer,"
@@ -349,11 +351,12 @@ per-user filename, cache-busted on the displayed URL) rather than
 accumulating one object per upload. Separate from Settings (4.9), which
 stays account-mechanics-only.
 
-### 4.16 Venue check-in code *(future)*
-Reachable from a venue's own event management view. Generates a
-printable, poster-ready QR for a specific event — meant to be printed
-and physically displayed at the show. See §3.1 for how the same code
-behaves differently depending on who scans it.
+### 4.16 Venue check-in code
+Built. Reachable from a venue's own event list (`src/app/venues/mine/
+page.tsx`, `GenerateCheckinButton`/`VenueCheckinQR`). Generates a
+printable, poster-ready, reusable QR for a specific event — meant to
+be printed and physically displayed at the show. See §3.1 for how the
+same code behaves differently depending on who scans it.
 
 ### 4.17 Connect streaming account *(future)*
 Reachable from Settings or Profile edit. OAuth connect flow per
@@ -406,10 +409,13 @@ and why each exists:
   `expires_at` column that's unenforced in Phase 1 and enforced in
   Phase 3, along with the `lat`/`lng` columns location verification
   needs (see §9 Phase 3).
-- **venues** — `owner_id` is nullable; most MVP venues are unclaimed
-  locations, not accounts. Claiming becomes a feature later. *(Future)*
-  a claim also carries a `status` (`pending`/`approved`/`rejected`),
-  reviewed manually by an admin — permanently, not just for now.
+- **venues** — `owner_id` is nullable; most venues start unclaimed.
+  Claiming/registering one is built (Phase 4, §9): a separate
+  `venue_claims` table (not a status column on `venues` — a naive
+  owner-scoped `UPDATE` policy would let a user self-approve) carries
+  `status` (`pending`/`approved`/`rejected`), reviewed manually by an
+  admin via `approve_venue_claim`/`reject_venue_claim` — permanently,
+  not just for now. See CLAUDE.md's "Admin & venue claiming/check-in".
 - **events** — belongs to a venue, hosted by a user. *(Future)* gains
   a `status` column (`approved` by default for admin-seeded MVP data,
   `pending`/`approved`/`rejected` once user submission opens) — MVP
@@ -422,8 +428,8 @@ and why each exists:
   actually needs to count.
 - **attendance** — records a confirmed "I Was There," kept deliberately
   separate from `rsvps`: `user_id`, `event_id`, `confirmed_at`, and a
-  `method` (`gps` or `venue_qr`, though only `gps` is produced until the
-  venue check-in QR ships in Phase 4) — going and actually-having-gone
+  `method` (`gps` or `venue_qr`, both produced now that the venue
+  check-in QR has shipped in Phase 4) — going and actually-having-gone
   are different facts and neither should overwrite the other.
 - **user_profiles** — **resolves the open question below**: this is
   the "columns on `users` or a separate table" decision. 1:1 with
@@ -466,12 +472,6 @@ Sketched here for planning purposes — not final column lists:
 - **forum_posts** — want-ad content, posted by a user, with whatever
   rate-limited contact-reveal mechanism ends up designed for the
   tear-off-tab idea.
-- **invites, extended** — venue-issued codes reuse the `invites` table
-  rather than becoming a new one, with a couple of differences from
-  peer stamps: a `venue_id` (nullable — null means a normal peer
-  invite), an `event_id` it's tied to, and a `reusable` flag, since a
-  printed poster gets scanned by many people over a show rather than
-  once by one person.
 - **music_connections** — one row per user per provider: `provider`
   (spotify/apple_music), `access_token`, `refresh_token`,
   `expires_at`, `visible` (the pause/hide toggle). RLS should restrict
@@ -555,9 +555,9 @@ the MVP.
       `pending` and invisible to others until approved
 - [ ] Simple internal admin review queue for pending events + venue claims
 - [ ] Custom event poster upload (cheap addition once event creation exists)
-- [ ] Venue claiming/registration flow, manually approved by an admin
+- [x] Venue claiming/registration flow, manually approved by an admin
       (permanent process, not a placeholder for later automation)
-- [ ] Venue check-in QR generation (depends on venue accounts above
+- [x] Venue check-in QR generation (depends on venue accounts above
       *and* the `attendance` table from Phase 3 — don't start before both exist)
 - [ ] Basic reporting for already-approved content (separate from the
       pre-approval queue above — this handles things that only become
@@ -604,17 +604,22 @@ Things worth deciding before the phase that needs them, not before:
   fails for a legitimate reason (e.g. bad signal in a basement venue —
   genuinely plausible for this app), is there a manual fallback, or is
   it strictly GPS-or-nothing? **Decided (Phase 3):** strictly
-  GPS-or-nothing, no manual fallback — see `confirmAttendance` in
-  src/app/events/actions.ts. Revisit once the venue-printed QR (§3.1,
-  Phase 4) ships, since that gives bad-signal venues a real alternative
-  confirmation path (`attendance.method = 'venue_qr'`) without weakening
-  what a GPS-based "I Was There" claims to verify.
+  GPS-or-nothing, no manual fallback, for the `gps` method — see
+  `confirmAttendance` in src/app/events/actions.ts. **Resolved
+  (Phase 4):** the venue-printed check-in QR (§3.1, §4.16) shipped as
+  the real alternative this anticipated — `confirmAttendance` also
+  accepts `method: "venue_qr"`, which skips the GPS/proximity check
+  entirely rather than weakening what a GPS-based confirmation claims
+  to verify.
 - Venue-issued registration is a real loophole in the exclusivity
   model worth being honest about: a well-attended show could let
   dozens of strangers self-register from one poster in one night,
   which is a very different growth shape than one person inviting
-  one person. Worth deciding whether venue invites need any rate
-  limit or friction of their own before this ships, not after.
+  one person. **Decided (captain, 2026-08-26):** no rate limiting,
+  redemption cap, or per-device/time throttle on the reusable venue
+  check-in code — shipped exactly as scoped with no cap or throttling
+  scaffolding. Revisit only if abuse patterns actually show up in
+  practice.
 - For streaming now-playing: does the app poll on a timer (needs
   background infrastructure) or fetch live whenever someone views the
   profile (simpler, but the data can be a few minutes stale between
