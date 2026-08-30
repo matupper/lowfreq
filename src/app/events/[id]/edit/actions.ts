@@ -33,9 +33,9 @@ export async function updateEvent(
 
   // A rejected submission goes back to 'pending' on save — editing it is
   // always a resubmission, there's no "edit but stay rejected" state. The
-  // RLS with-check only requires auth.uid() = host_id (not a status
-  // restriction), so this is allowed regardless of which of the two
-  // editable statuses the row was in.
+  // RLS with-check (tightened in db/migrations/0010) requires both
+  // auth.uid() = host_id and the written status be 'pending' or 'rejected',
+  // which this update satisfies since it always writes 'pending'.
   const { data: updated, error } = await supabase
     .from("events")
     .update({

@@ -52,19 +52,6 @@ export async function uploadEventPoster(
     return "Couldn't upload that image. Try again.";
   }
 
-  // A prior poster uploaded under a different extension lives at a
-  // different path and won't be overwritten by the upsert above — clean it
-  // up so it doesn't stick around as an orphaned public object.
-  const { data: existingPosterFiles } = await supabase.storage
-    .from("event-posters")
-    .list(eventId);
-  const stalePosterPaths = (existingPosterFiles ?? [])
-    .filter((file) => file.name.startsWith("poster.") && file.name !== `poster.${extension}`)
-    .map((file) => `${eventId}/${file.name}`);
-  if (stalePosterPaths.length > 0) {
-    await supabase.storage.from("event-posters").remove(stalePosterPaths);
-  }
-
   const {
     data: { publicUrl },
   } = supabase.storage.from("event-posters").getPublicUrl(path);
@@ -78,7 +65,26 @@ export async function uploadEventPoster(
     .update({ poster_url: posterUrl })
     .eq("id", eventId);
   if (updateError) {
+    // Roll back the just-uploaded object so a DB-update failure doesn't
+    // leave it orphaned (create path) or leave two poster files stored for
+    // one event (edit path) with no events row pointing at the new one.
+    await supabase.storage.from("event-posters").remove([path]);
     return "Poster uploaded, but couldn't save it to the event. Try again.";
+  }
+
+  // Only safe to remove a prior poster uploaded under a different extension
+  // once the DB confirms the new path is live — clean it up now so it
+  // doesn't stick around as an orphaned public object. Doing this before the
+  // update above risked leaving events.poster_url pointing at a 404 if that
+  // update failed.
+  const { data: existingPosterFiles } = await supabase.storage
+    .from("event-posters")
+    .list(eventId);
+  const stalePosterPaths = (existingPosterFiles ?? [])
+    .filter((file) => file.name.startsWith("poster.") && file.name !== `poster.${extension}`)
+    .map((file) => `${eventId}/${file.name}`);
+  if (stalePosterPaths.length > 0) {
+    await supabase.storage.from("event-posters").remove(stalePosterPaths);
   }
 
   return null;
