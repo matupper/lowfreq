@@ -15,9 +15,12 @@ export async function approveVenueClaim(claimId: string) {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  await supabase.rpc("approve_venue_claim", { claim_id: claimId });
+  const { data: approved } = await supabase.rpc("approve_venue_claim", {
+    claim_id: claimId,
+  });
 
   revalidatePath("/admin");
+  if (!approved) redirect("/admin?error=approve_failed");
 }
 
 export async function rejectVenueClaim(claimId: string) {
@@ -27,7 +30,10 @@ export async function rejectVenueClaim(claimId: string) {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  await supabase.rpc("reject_venue_claim", { claim_id: claimId });
+  const { data: rejected } = await supabase.rpc("reject_venue_claim", {
+    claim_id: claimId,
+  });
 
   revalidatePath("/admin");
+  if (!rejected) redirect("/admin?error=reject_failed");
 }

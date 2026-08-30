@@ -28,7 +28,15 @@ const dateFormatter = new Intl.DateTimeFormat("en-US", {
   minute: "2-digit",
 });
 
-export default async function AdminPage() {
+const CLAIM_ERROR_COPY: Record<string, string> = {
+  approve_failed:
+    "Couldn't approve — the venue was already claimed by someone else.",
+  reject_failed: "Couldn't reject — that claim was already handled.",
+};
+
+export default async function AdminPage({
+  searchParams,
+}: PageProps<"/admin">) {
   const supabase = await createClient();
   const {
     data: { user },
@@ -45,6 +53,10 @@ export default async function AdminPage() {
   const { data: claims } = await supabase.rpc("list_pending_venue_claims");
   const claimRows = (claims ?? []) as VenueClaimRow[];
 
+  const params = await searchParams;
+  const rawError = typeof params?.error === "string" ? params.error : "";
+  const errorMessage = CLAIM_ERROR_COPY[rawError];
+
   return (
     <main className="flex-1 flex flex-col max-w-2xl mx-auto w-full px-6 py-10 gap-10">
       <div className="space-y-1">
@@ -52,6 +64,12 @@ export default async function AdminPage() {
           ADMIN
         </h1>
       </div>
+
+      {errorMessage && (
+        <p className="font-mono text-[11px] text-riso-pink border border-riso-pink rounded-[2px] px-3 py-2">
+          {errorMessage}
+        </p>
+      )}
 
       <section className="space-y-3">
         <h2 className="font-mono text-[11px] text-kraft uppercase tracking-wide">
