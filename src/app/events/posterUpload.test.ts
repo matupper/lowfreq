@@ -107,4 +107,42 @@ describe("uploadEventPoster", () => {
     expect(error).toBe("Couldn't upload that image. Try again.");
     expect(update).not.toHaveBeenCalled();
   });
+
+  it("rolls back the just-uploaded object when the DB update fails, and never touches prior posters", async () => {
+    // Regression coverage for the rollback-ordering fix: if the storage
+    // upload succeeds but the events.poster_url update fails, the newly
+    // uploaded object must be removed (no orphan) and the stale-poster
+    // cleanup pass must not run at all — leaving events.poster_url pointing
+    // at a 404 on partial failure is exactly what the fix prevents.
+    const upload = vi.fn().mockResolvedValue({ error: null });
+    const list = vi.fn().mockResolvedValue({ data: [{ name: "poster.png" }] });
+    const remove = vi.fn().mockResolvedValue({ error: null });
+    const getPublicUrl = vi.fn().mockReturnValue({
+      data: { publicUrl: "https://example.com/event-posters/event-1/poster.jpg" },
+    });
+    const update = vi.fn().mockReturnValue({
+      eq: vi.fn().mockResolvedValue({ error: { message: "db down" } }),
+    });
+
+    const supabase = {
+      storage: {
+        from: (bucket: string) => {
+          if (bucket !== "event-posters") throw new Error(`unexpected bucket: ${bucket}`);
+          return { upload, list, remove, getPublicUrl };
+        },
+      },
+      from: (table: string) => {
+        if (table !== "events") throw new Error(`unexpected table: ${table}`);
+        return { update };
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any;
+
+    const file = new File(["fake-bytes"], "poster.jpg", { type: "image/jpeg" });
+    const error = await uploadEventPoster(supabase, "event-1", file, "jpg");
+
+    expect(error).toBe("Poster uploaded, but couldn't save it to the event. Try again.");
+    expect(remove).toHaveBeenCalledExactlyOnceWith(["event-1/poster.jpg"]);
+    expect(list).not.toHaveBeenCalled();
+  });
 });
