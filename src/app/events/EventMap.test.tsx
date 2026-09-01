@@ -111,12 +111,14 @@ function makeEvent(overrides: Partial<EventWithVenue> = {}): EventWithVenue {
     description: null,
     startTime: "2026-09-01T02:00:00Z",
     displayTime: "sep 1",
+    dateKey: "2026-09-01",
     venue: { id: "venue-1", name: "The Basement", address: null, lat: 45.5, lng: -122.6 },
     goingCount: 0,
     myGoing: false,
     mySaved: false,
     hasStarted: false,
     attendedAt: null,
+    posterUrl: null,
     ...overrides,
   };
 }

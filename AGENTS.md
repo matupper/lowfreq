@@ -22,6 +22,11 @@ authoritative for what's actually deployed either. Apply drift with
 PR but were never applied to `lowfreq-dev`, silently breaking invite
 registration, location-verified invites, and attendance end to end while
 existing code review, tests, and docs all treated the feature as shipped.
+Editing a migration file after it's already been applied doesn't change
+what's live either — the database has no record that the file changed.
+If a bug is found in an already-applied migration's SQL, write a new
+migration that fixes it live instead of editing the old file in place
+(see `db/migrations/0010_fix_event_edit_with_check.sql`).
 
 ## Supabase session cookies: `cookieOptions.maxAge` is a no-op
 
@@ -97,6 +102,46 @@ CHROME_DEVTOOLS_AXI_BROWSER_URL=http://127.0.0.1:9333 chrome-devtools-axi start
 This machine also runs multiple concurrent agent sessions sharing the
 default chrome-devtools-axi bridge/port — set `CHROME_DEVTOOLS_AXI_SESSION`
 to a unique name to avoid colliding with another session's browser.
+
+A second, distinct failure mode (seen 2026-08-25): every command errors with
+`MCP error -32602: Input validation error: Invalid arguments for tool
+take_snapshot: Required at pageId` (also hits `evaluate_script`,
+`screenshot` silently no-ops without writing a file), and `pages` never
+marks any tab `selected: true` — happens even with the `--browserUrl`
+workaround above and after a full bridge restart, so it isn't specific to
+one launch mode. Root cause: `chrome-devtools-axi` (0.1.30 at time of
+writing) bootstraps `chrome-devtools-mcp` via `npx -y
+chrome-devtools-mcp@latest`, and mcp 1.8.0 added a required `pageId` param
+this axi version doesn't yet send. Fix: pin to a known-good mcp version
+instead of `@latest` —
+```
+mkdir -p /some/scratch/dir/cdm-1.7.0 && cd /some/scratch/dir/cdm-1.7.0
+npm install chrome-devtools-mcp@1.7.0 --no-save
+export CHROME_DEVTOOLS_AXI_MCP_PATH="$PWD/node_modules/chrome-devtools-mcp/build/src/bin/chrome-devtools-mcp.js"
+chrome-devtools-axi start   # combine with CHROME_DEVTOOLS_AXI_BROWSER_URL above if also hitting the first issue
+```
+Re-check the installed `chrome-devtools-mcp` version (`npm view
+chrome-devtools-mcp version`) before assuming 1.7.0 is still the right pin —
+a future `chrome-devtools-axi` release may catch up and make this
+unnecessary.
+
+## Browser-testing signup: real domain required, and email sends are rate-limited
+
+Supabase Auth on `lowfreq-dev` rejects signup with a "Email address is
+invalid" error for placeholder domains like `example.com` or a made-up
+`*.dev` domain — use a real, deliverable domain (e.g. your own address with
+`+something` tagging) when exercising the signup form end-to-end in a
+browser. Each signup attempt also sends a real confirmation email even on
+failure paths, and the project's free-tier send quota is easy to exhaust
+across a few retries — expect "email rate limit exceeded" after a handful of
+attempts in one session, with no visible reset countdown. To finish testing
+a signed-in flow without waiting on a real inbox or the quota, confirm the
+test account directly instead of clicking the email link: `update
+auth.users set email_confirmed_at = now() where email = '<test address>'`
+via the Supabase SQL tool. A manually-inserted `invites` row for the test
+signup needs its `token` in the exact form `normalizeInviteToken()`
+(`src/lib/invites.ts`) would produce from the URL — uppercase, no
+separators — since the redemption lookup does a raw string match.
 
 ## Mutating specific `users` columns: RPC, not an RLS UPDATE policy
 

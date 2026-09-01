@@ -86,7 +86,11 @@ shared between list and map views so RSVP/save behave identically in
 both places; the map expands a pin into that same card in place rather
 than navigating away. Both views can jump to the other's matching card
 ("view on map" from a list card, "view in list" from the map's
-expanded card).
+expanded card). `EventCard` also renders a host-uploaded poster
+(`events.poster_url`, docs/designdoc.md §9 Phase 4 item 3) as the
+card's header image when present, falling back to today's pure-text
+treatment when absent — shared automatically by both views since it's
+the one component.
 
 maplibre-gl needs its `import.meta.url`-derived tile-loading worker URL
 overridden via `setWorkerUrl()` (called at module scope in EventMap.tsx) —
@@ -99,6 +103,28 @@ error, style/sprite/tiles.json all fetch fine). `scripts/copy-maplibre-worker.js
 note for why this class of bug (works in source, breaks at runtime) needs
 a real browser to catch, not just tests/lint/build.
 
+## Landing page & bottom nav
+`/home` (src/app/home/page.tsx + HomeBrowser.tsx) *is* the Browse Shows
+view — not a "you're in" welcome screen with a link into browsing. It
+shows an editorial "TONIGHT" masthead (no personalized greeting) over the
+shows list, date-grouped as the user scrolls: today's shows under
+"TONIGHT", then a small header per subsequent date ("Wednesday, 8/26" —
+see `dateKeyInZone`/`formatDateGroupHeader` in src/lib/dateGrouping.ts,
+which bake in the scene time zone once server-side so the client groups
+by a plain string key). `/events` now just `redirect()`s to `/home` for
+old links/bookmarks — don't add real page logic back there.
+`src/components/BottomNav.tsx` is the app-wide bottom nav ("Poster Bar":
+flush to the bottom edge, 2px solid ink top border, Anton labels, riso-pink
+underline as the active mark — see the nav-landing-direction captain
+decision for the full rationale/rejected alternatives). Tabs are Shows /
+Map / Profile — Map is EventMap.tsx, not a placeholder; there is no Feed
+tab/route. On `/home`, Shows/Map are in-page view state (BottomNav's
+`onSelect`) reusing the same focus-jump mechanism EventCard's "view on
+map" already used between list/map (`focusedEventId`/`mapFocusNonce`);
+Profile always navigates via a real link. From any other route (e.g.
+`/profile`), BottomNav falls back to plain links (`/home`,
+`/home?view=map`) since it has no local view state to switch there.
+
 ## Data model notes
 - public.users.id is the SAME id as auth.users.id (Supabase Auth), linked
   via a foreign key + trigger (handle_new_user). Never manually insert
@@ -110,6 +136,13 @@ a real browser to catch, not just tests/lint/build.
   docs/designdoc.md §6.
 - venues.owner_id is nullable — most venues start unclaimed; "claiming"
   a venue is a later feature, not MVP.
+- events.status (pending/approved/rejected, default approved) gates the
+  public feed — src/app/home/page.tsx's query filters on it explicitly
+  rather than relying on RLS alone, since RLS's own-row exception for a
+  host would otherwise leak their pending submission into their normal
+  feed. users.is_admin is a plain boolean checked internally by
+  list_pending_events/approve_event/reject_event (db/schema.sql), not
+  exposed via RLS — see docs/designdoc.md §9 Phase 4.
 
 ## Build order
 Auth, event browse/RSVP, invite gating, location verification (expiry
@@ -117,8 +150,10 @@ enforcement, GPS-checked invites, attendance/"I Was There"), and profile
 fields (avatar, handle, bio, music identity — see docs/designdoc.md
 §4.7/§4.15 and AGENTS.md's notes on the `users`-mutation RPC pattern and
 avatar storage) are all built, including the attendance denied-location
-decision (see "Attendance" above). For what's next, see
-docs/designdoc.md §9.
+decision (see "Attendance" above). Phase 4 Track A — user-submitted
+events, an admin review queue (`/admin`, no BottomNav entry), and
+custom event poster upload — is also built (docs/designdoc.md §9 Phase
+4, §4.12/§4.12a). For what's next, see docs/designdoc.md §9.
 
 Signed-in sessions persist across browser restarts (~90 days) via a
 `maxAge` override on the Supabase session cookie — see

@@ -2,7 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { SESSION_COOKIE_MAX_AGE_SECONDS } from "@/lib/supabase/cookie-options";
 
-const PROTECTED_PATHS = ["/home", "/events", "/profile"];
+const PROTECTED_PATHS = ["/home", "/events", "/profile", "/admin"];
 
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
