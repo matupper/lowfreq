@@ -65,11 +65,19 @@ that "someone let you in" feeling, not against conversion metrics.
   favorite artists/albums/songs, shown as pill lists — only for
   whichever categories you've actually filled in
 
+**Venue accounts**
+- Claim an existing unclaimed venue, or register a brand-new one —
+  either way, an admin manually reviews and approves it before the
+  account is live
+- Once claimed, a venue can generate a printable, reusable check-in QR
+  for a specific event; scanning it in person confirms "I Was There"
+  without needing a GPS fix
+
 None of this is mocked up — auth, RSVP, invite generation/scanning,
-gated registration, GPS verification, profile editing, and event
-submission/admin review are all live, server-enforced code paths. See
-`docs/designdoc.md` §9 for what's shipped versus what's still ahead
-(venue claims/registration, bands, forum, etc. — not built).
+gated registration, GPS verification, profile editing, event
+submission/admin review, and venue claiming/check-in are all live,
+server-enforced code paths. See `docs/designdoc.md` §9 for what's
+shipped versus what's still ahead (bands, forum, etc. — not built).
 
 ## Visual language
 

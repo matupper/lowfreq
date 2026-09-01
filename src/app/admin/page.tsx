@@ -2,12 +2,27 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { approveEvent, rejectEvent } from "./actions";
+import { approveVenueClaim, rejectVenueClaim } from "./actions";
 
 type PendingEventRow = {
   event_id: string;
   title: string;
   venue_name: string;
   host_name: string;
+  created_at: string;
+};
+
+type VenueClaimRow = {
+  claim_id: string;
+  venue_id: string | null;
+  claimant_id: string;
+  claimant_name: string;
+  venue_name: string | null;
+  venue_address: string | null;
+  venue_lat: number | null;
+  venue_lng: number | null;
+  existing_venue_name: string | null;
+  note: string | null;
   created_at: string;
 };
 
@@ -18,11 +33,19 @@ const dateFormatter = new Intl.DateTimeFormat("en-US", {
   minute: "2-digit",
 });
 
+const CLAIM_ERROR_COPY: Record<string, string> = {
+  approve_failed:
+    "Couldn't approve — the venue was already claimed by someone else.",
+  reject_failed: "Couldn't reject — that claim was already handled.",
+};
+
 // Plain table, not a designed screen (per docs/designdoc.md §4.12a) — this
-// is reached by direct URL only, with no BottomNav entry. Track B adds a
-// second section (venue claims) to this same page later; see CLAUDE.md's
-// note on reconciling a merge conflict here by keeping both sections.
-export default async function AdminPage() {
+// is reached by direct URL only, with no BottomNav entry. Two sections:
+// pending events (Track A) and pending venue claims (Track B) — see
+// CLAUDE.md's note on reconciling a merge conflict here by keeping both.
+export default async function AdminPage({
+  searchParams,
+}: PageProps<"/admin">) {
   const supabase = await createClient();
   const {
     data: { user },
@@ -42,8 +65,15 @@ export default async function AdminPage() {
   const { data: pendingEvents } = await supabase.rpc("list_pending_events");
   const rows = (pendingEvents ?? []) as PendingEventRow[];
 
+  const { data: claims } = await supabase.rpc("list_pending_venue_claims");
+  const claimRows = (claims ?? []) as VenueClaimRow[];
+
+  const params = await searchParams;
+  const rawError = typeof params?.error === "string" ? params.error : "";
+  const errorMessage = CLAIM_ERROR_COPY[rawError];
+
   return (
-    <main className="max-w-3xl mx-auto w-full px-6 pt-10 pb-20">
+    <main className="max-w-3xl mx-auto w-full px-6 pt-10 pb-20 flex flex-col gap-10">
       <div className="flex items-center justify-between mb-8">
         <h1 className="font-display text-3xl leading-none tracking-wide">
           ADMIN
@@ -52,6 +82,12 @@ export default async function AdminPage() {
           &larr; home
         </Link>
       </div>
+
+      {errorMessage && (
+        <p className="font-mono text-[11px] text-riso-pink border border-riso-pink rounded-[2px] px-3 py-2">
+          {errorMessage}
+        </p>
+      )}
 
       <section className="space-y-3">
         <h2 className="font-mono text-[11px] text-kraft uppercase tracking-wide">
@@ -114,6 +150,78 @@ export default async function AdminPage() {
           </table>
         )}
       </section>
+
+      <section className="space-y-3">
+        <h2 className="font-mono text-[11px] text-kraft uppercase tracking-wide">
+          pending venue claims ({claimRows.length})
+        </h2>
+        {claimRows.length === 0 ? (
+          <p className="text-sm text-kraft">Nothing pending.</p>
+        ) : (
+          <div className="flex flex-col divide-y divide-line border border-line rounded-[2px]">
+            {claimRows.map((claim) => (
+              <VenueClaimRow key={claim.claim_id} claim={claim} />
+            ))}
+          </div>
+        )}
+      </section>
     </main>
+  );
+}
+
+function VenueClaimRow({ claim }: { claim: VenueClaimRow }) {
+  const isNewVenue = claim.venue_id === null;
+
+  return (
+    <div className="flex flex-col gap-2 px-4 py-3 text-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 space-y-0.5">
+          <p className="font-medium">
+            {claim.claimant_name}{" "}
+            <span className="text-kraft font-normal">
+              {isNewVenue ? "wants to register" : "wants to claim"}
+            </span>
+          </p>
+          <p className="truncate">
+            {isNewVenue ? claim.venue_name : claim.existing_venue_name}
+          </p>
+          {isNewVenue && claim.venue_address && (
+            <p className="font-mono text-[11px] text-kraft truncate">
+              {claim.venue_address}
+            </p>
+          )}
+          {isNewVenue && claim.venue_lat != null && claim.venue_lng != null && (
+            <p className="font-mono text-[11px] text-kraft">
+              {claim.venue_lat.toFixed(5)}, {claim.venue_lng.toFixed(5)}
+            </p>
+          )}
+          {claim.note && (
+            <p className="text-xs text-kraft italic pt-1">&ldquo;{claim.note}&rdquo;</p>
+          )}
+        </div>
+        <span className="font-mono text-[11px] text-kraft shrink-0">
+          {dateFormatter.format(new Date(claim.created_at))}
+        </span>
+      </div>
+
+      <div className="flex gap-2 pt-1">
+        <form action={approveVenueClaim.bind(null, claim.claim_id)}>
+          <button
+            type="submit"
+            className="font-mono text-[11px] text-riso-pink border border-riso-pink rounded-full px-3 py-1"
+          >
+            approve
+          </button>
+        </form>
+        <form action={rejectVenueClaim.bind(null, claim.claim_id)}>
+          <button
+            type="submit"
+            className="font-mono text-[11px] text-kraft border border-line rounded-full px-3 py-1"
+          >
+            reject
+          </button>
+        </form>
+      </div>
+    </div>
   );
 }

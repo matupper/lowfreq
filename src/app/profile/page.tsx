@@ -38,6 +38,7 @@ export default async function ProfilePage() {
     inviterResult,
     identityResult,
     profileFieldsResult,
+    ownedVenueResult,
     submissionsResult,
   ] = await Promise.all([
     supabase
@@ -52,6 +53,9 @@ export default async function ProfilePage() {
       .select("bio, instruments, favorite_artists, favorite_albums, favorite_songs")
       .eq("user_id", user.id)
       .maybeSingle(),
+    // Only used to decide which of "claim a venue"/"manage your venue" to
+    // show below — a venue owner has already been through the claim flow.
+    supabase.from("venues").select("id").eq("owner_id", user.id).limit(1),
     // Only pending/rejected — an approved submission is just a normal show
     // at that point, surfaced (if RSVP'd) through "your shows" above, not
     // duplicated here. See docs/designdoc.md §9 Phase 4 item 1.
@@ -67,6 +71,7 @@ export default async function ProfilePage() {
   const going = rsvps.filter((r) => r.going);
   const saved = rsvps.filter((r) => r.saved);
   const tree = (treeResult.data ?? []) as InviteTreeRow[];
+  const ownsVenue = (ownedVenueResult.data ?? []).length > 0;
   const submissions: SubmittedEvent[] = (submissionsResult.data ?? []).map((e) => ({
     id: e.id,
     title: e.title,
@@ -202,6 +207,24 @@ export default async function ProfilePage() {
             <InviteeList tree={tree} />
           </div>
         </section>
+
+        <div className="pt-2">
+          {ownsVenue ? (
+            <Link
+              href="/venues/mine"
+              className="font-mono text-[11px] text-kraft underline underline-offset-2"
+            >
+              manage your venue
+            </Link>
+          ) : (
+            <Link
+              href="/venues/claim"
+              className="font-mono text-[11px] text-kraft underline underline-offset-2"
+            >
+              run a venue? claim it
+            </Link>
+          )}
+        </div>
       </main>
       <BottomNav active="profile" />
     </div>
