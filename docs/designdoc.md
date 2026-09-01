@@ -289,7 +289,13 @@ an account with none of it set shows no music-identity section at all,
 same "optional fields don't leave visible empty scaffolding" rule as
 the bio. Then: your going/saved shows, your invite tree (who you've
 invited, whether they've joined), and a way to generate a new invite
-stamp to give out. *(Future, Phase 2)* adds a fourth: a record of shows
+stamp to give out. Also built (Phase 4 item 1): a "your submitted
+events" section listing your own pending/rejected events (an approved
+submission just appears as a normal show above, not duplicated here),
+and a "submit an event" entry point next to the invite button — both
+follow the existing ShowList/InviteeList and GenerateInviteButton
+patterns rather than adding status-branch UI to `EventCard.tsx`.
+*(Future, Phase 2)* adds a fourth: a record of shows
 you were confirmed at ("I Was There"), separate from RSVPs — this is a
 history of what actually happened, not of what you planned to do.
 *(Future, Phase 6)* adds a now-playing badge if the person has
@@ -314,22 +320,26 @@ Name and create a band, invite existing members to join it, edit the
 streaming/video links. Band membership needs at least one permission
 tier worth deciding later — see open questions.
 
-### 4.12 Event creation / edit *(future)*
-Where user-submitted events get built. Includes the optional custom
-poster upload (§3.1) — if a host uploads an image, it becomes the
-event's card/thumbnail everywhere instead of the generated flyer-card
-treatment. Also where bands get attached to an event as performers.
+### 4.12 Event creation / edit
+Built (`src/app/events/new/page.tsx`, `src/app/events/[id]/edit/page.tsx`):
+title, description, start_time, and a venue picker over existing
+`venues` rows only — creating a new venue inline is out of scope here
+(Track B item 4). Includes the custom poster upload (§3.1): if a host
+uploads an image, it becomes the event's card/thumbnail everywhere
+(`EventCard.tsx`) instead of the generated flyer-card treatment.
 Submitted events enter as `pending` and aren't visible to anyone else
-until an admin approves them — the host should see a clear "awaiting
-approval" state rather than assuming it's already live.
+until an admin approves them; the host's pending/rejected state and
+edit link surface on Profile (§4.7) rather than in the normal shows
+list. *(Future, Phase 5)* attaching bands to an event as performers.
 
 ### 4.12a Admin review queue
-Built for venue claims (`src/app/admin/page.tsx`): a plain table
-listing pending claims with approve/reject actions, gated on
-`users.is_admin`. Pending-event review is still *(future)* — it lands
-once user-submitted events (§9 Phase 4) ships alongside it. Doesn't
-need real design investment early on — a plain table is fine until
-volume says otherwise.
+Not user-facing, reached by direct URL only (`/admin` — no BottomNav
+entry). Built, with two sections on the same page
+(`src/app/admin/page.tsx`), both gated server-side on `users.is_admin`
+with a redirect for non-admins, matching Profile's gated-screen pattern:
+pending events, and pending venue claims — each a plain table/list with
+approve/reject actions. Doesn't need real design investment early on —
+a plain table is fine for both until volume says otherwise.
 
 ### 4.13 Forum board *(future)*
 Scrollable board of want-ad-style posts ("looking for a drummer,"
@@ -404,7 +414,13 @@ and why each exists:
   `users`, since `users` also holds `phone`/`invited_by`/`created_at`
   and RLS can't restrict which *columns* a client changes, only which
   rows — same reasoning as every other narrow mutation RPC below
-  (`redeem_invite`, `revoke_invite`, `set_rsvp_going`).
+  (`redeem_invite`, `revoke_invite`, `set_rsvp_going`). `is_admin`
+  (built, Phase 4 item 2) is a plain boolean, default `false`, with no
+  self-service grant path — admins are bootstrapped by a manual `update`
+  against the live project. `list_pending_events`/`approve_event`/
+  `reject_event` (db/schema.sql) check it internally rather than through
+  RLS, since the admin review queue needs to bypass the normal
+  "approved events only" read policy entirely.
 - **invites** — token, status (unused/used/expired/revoked), and an
   `expires_at` column that's unenforced in Phase 1 and enforced in
   Phase 3, along with the `lat`/`lng` columns location verification
@@ -416,11 +432,19 @@ and why each exists:
   `status` (`pending`/`approved`/`rejected`), reviewed manually by an
   admin via `approve_venue_claim`/`reject_venue_claim` — permanently,
   not just for now. See CLAUDE.md's "Admin & venue claiming/check-in".
-- **events** — belongs to a venue, hosted by a user. *(Future)* gains
-  a `status` column (`approved` by default for admin-seeded MVP data,
-  `pending`/`approved`/`rejected` once user submission opens) — MVP
-  events can default straight to `approved` since only admins create
-  them right now, avoiding a migration headache later.
+- **events** — belongs to a venue, hosted by a user. `status` (built,
+  Phase 4 item 1) defaults to `approved` so existing/seeded rows needed
+  no backfill, and is `pending`/`approved`/`rejected` for user
+  submissions; the public-read RLS policy allows `approved` rows or a
+  host's own, and `src/app/home/page.tsx`'s feed query adds an explicit
+  `status = 'approved'` filter on top rather than relying on RLS alone,
+  since RLS's own-row exception would otherwise leak a host's pending
+  submission into their normal feed. `poster_url` (built, Phase 4 item
+  3) is nullable — absence keeps the generated flyer-card treatment
+  (`EventCard.tsx`); the paired `event-posters` Storage bucket is
+  per-event (`<event_id>/poster.<ext>`, public select, write policies
+  scoped through a subquery against `events.host_id` rather than the
+  `avatars` bucket's simpler foldername-equals-uid check).
 - **rsvps** — a single table with a `status` of going/saved. No
   "interested" state — early scoping had a three-state version, but in
   practice going/not-going with a separate independent Save covers the
@@ -466,9 +490,6 @@ Sketched here for planning purposes — not final column lists:
 - **event_performers** — join table between `events` and `bands`, so
   an event can list multiple bands and a band can appear on multiple
   events.
-- **events.poster_url** — a new nullable column on the existing
-  `events` table for the optional custom poster image. Nullable by
-  design: absence means "use the generated flyer-card treatment."
 - **forum_posts** — want-ad content, posted by a user, with whatever
   rate-limited contact-reveal mechanism ends up designed for the
   tear-off-tab idea.
@@ -551,10 +572,13 @@ the MVP.
       and location permission denied/GPS failure for attendance (see §10)
 
 ### Phase 4 — Opening up posting
-- [ ] User-submitted events (currently admin/seed-only), entering as
-      `pending` and invisible to others until approved
-- [ ] Simple internal admin review queue for pending events + venue claims
-- [ ] Custom event poster upload (cheap addition once event creation exists)
+- [x] User-submitted events (previously admin/seed-only), entering as
+      `pending` and invisible to others until approved (Track A item 1)
+- [x] Simple internal admin review queue for pending events (Track A
+      item 2 — plain table at `/admin`, no BottomNav entry, reached by
+      direct URL only)
+- [x] Same admin queue extended to venue claims (Track B)
+- [x] Custom event poster upload (Track A item 3)
 - [x] Venue claiming/registration flow, manually approved by an admin
       (permanent process, not a placeholder for later automation)
 - [x] Venue check-in QR generation (depends on venue accounts above
@@ -631,8 +655,10 @@ Things worth deciding before the phase that needs them, not before:
   now? Affects `band_members` schema — worth deciding before Phase 5,
   not before.
 - For custom event posters: any size/aspect-ratio constraints, or
-  accept anything and crop/contain in the UI? Affects the upload flow
-  more than the schema.
+  accept anything and crop/contain in the UI? **Decided (Phase 4 item
+  3):** accept JPEG/PNG/WebP/GIF up to 5MB (`posterUpload.ts`), no
+  aspect-ratio requirement — `EventCard.tsx` renders it `bg-cover` into
+  a fixed `4:3` slot rather than constraining the upload itself.
 - For the forum's contact-reveal idea: how many "tears" per post
   before contact info stops being shown, and does the poster get
   notified when someone reveals it? This is the one feature here that

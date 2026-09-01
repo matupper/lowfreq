@@ -1,12 +1,17 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { approveEvent, rejectEvent } from "./actions";
 import { approveVenueClaim, rejectVenueClaim } from "./actions";
 
-// Plain table page per docs/designdoc.md §4.12a — "doesn't need real design
-// investment early." Not linked from BottomNav; reached by direct URL only
-// (see src/proxy.ts's PROTECTED_PATHS for the login-redirect half of the
-// gate — the is_admin check below is the other half, and the RPCs' own
-// internal is_admin check is the actual security boundary).
+type PendingEventRow = {
+  event_id: string;
+  title: string;
+  venue_name: string;
+  host_name: string;
+  created_at: string;
+};
+
 type VenueClaimRow = {
   claim_id: string;
   venue_id: string | null;
@@ -34,6 +39,10 @@ const CLAIM_ERROR_COPY: Record<string, string> = {
   reject_failed: "Couldn't reject — that claim was already handled.",
 };
 
+// Plain table, not a designed screen (per docs/designdoc.md §4.12a) — this
+// is reached by direct URL only, with no BottomNav entry. Two sections:
+// pending events (Track A) and pending venue claims (Track B) — see
+// CLAUDE.md's note on reconciling a merge conflict here by keeping both.
 export default async function AdminPage({
   searchParams,
 }: PageProps<"/admin">) {
@@ -43,12 +52,18 @@ export default async function AdminPage({
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
+  // proxy.ts's /admin entry only redirects signed-out visitors — this is
+  // the actual gate. The real security boundary is the RPCs' own internal
+  // is_admin check (db/schema.sql), not this redirect.
   const { data: me } = await supabase
     .from("users")
     .select("is_admin")
     .eq("id", user.id)
     .single();
   if (!me?.is_admin) redirect("/home");
+
+  const { data: pendingEvents } = await supabase.rpc("list_pending_events");
+  const rows = (pendingEvents ?? []) as PendingEventRow[];
 
   const { data: claims } = await supabase.rpc("list_pending_venue_claims");
   const claimRows = (claims ?? []) as VenueClaimRow[];
@@ -58,11 +73,14 @@ export default async function AdminPage({
   const errorMessage = CLAIM_ERROR_COPY[rawError];
 
   return (
-    <main className="flex-1 flex flex-col max-w-2xl mx-auto w-full px-6 py-10 gap-10">
-      <div className="space-y-1">
-        <h1 className="font-display text-4xl leading-none tracking-wide">
+    <main className="max-w-3xl mx-auto w-full px-6 pt-10 pb-20 flex flex-col gap-10">
+      <div className="flex items-center justify-between mb-8">
+        <h1 className="font-display text-3xl leading-none tracking-wide">
           ADMIN
         </h1>
+        <Link href="/home" className="font-mono text-xs text-kraft">
+          &larr; home
+        </Link>
       </div>
 
       {errorMessage && (
@@ -73,7 +91,69 @@ export default async function AdminPage({
 
       <section className="space-y-3">
         <h2 className="font-mono text-[11px] text-kraft uppercase tracking-wide">
-          pending venue claims
+          pending events ({rows.length})
+        </h2>
+
+        {rows.length === 0 ? (
+          <p className="text-sm text-kraft">Nothing waiting on review.</p>
+        ) : (
+          <table className="w-full text-sm border-collapse">
+            <thead>
+              <tr className="border-b border-line text-left">
+                <th className="font-mono text-[10px] text-kraft uppercase tracking-wide py-2 pr-3">
+                  title
+                </th>
+                <th className="font-mono text-[10px] text-kraft uppercase tracking-wide py-2 pr-3">
+                  venue
+                </th>
+                <th className="font-mono text-[10px] text-kraft uppercase tracking-wide py-2 pr-3">
+                  host
+                </th>
+                <th className="font-mono text-[10px] text-kraft uppercase tracking-wide py-2 pr-3">
+                  submitted
+                </th>
+                <th className="font-mono text-[10px] text-kraft uppercase tracking-wide py-2" />
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.event_id} className="border-b border-line last:border-none">
+                  <td className="py-3 pr-3">{row.title}</td>
+                  <td className="py-3 pr-3 text-kraft">{row.venue_name}</td>
+                  <td className="py-3 pr-3 text-kraft">{row.host_name}</td>
+                  <td className="py-3 pr-3 font-mono text-[11px] text-kraft">
+                    {dateFormatter.format(new Date(row.created_at))}
+                  </td>
+                  <td className="py-3">
+                    <div className="flex items-center gap-2">
+                      <form action={approveEvent.bind(null, row.event_id)}>
+                        <button
+                          type="submit"
+                          className="font-mono text-[11px] uppercase tracking-wide rounded-full px-3 py-1.5 border border-riso-pink text-riso-pink hover:bg-riso-pink/10 transition-colors"
+                        >
+                          approve
+                        </button>
+                      </form>
+                      <form action={rejectEvent.bind(null, row.event_id)}>
+                        <button
+                          type="submit"
+                          className="font-mono text-[11px] uppercase tracking-wide rounded-full px-3 py-1.5 border border-line text-kraft hover:border-kraft transition-colors"
+                        >
+                          reject
+                        </button>
+                      </form>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="font-mono text-[11px] text-kraft uppercase tracking-wide">
+          pending venue claims ({claimRows.length})
         </h2>
         {claimRows.length === 0 ? (
           <p className="text-sm text-kraft">Nothing pending.</p>

@@ -7,6 +7,7 @@ import GenerateInviteButton from "@/components/GenerateInviteButton";
 import { signOut } from "@/app/home/actions";
 import { InvitedByCard, InviteeList, type Inviter, type InviteTreeRow } from "./InviteFriends";
 import { buildMusicPillGroups } from "@/lib/profile-fields";
+import type { SubmittedEvent } from "@/app/events/types";
 
 type ProfileFieldsRow = {
   bio: string | null;
@@ -38,6 +39,7 @@ export default async function ProfilePage() {
     identityResult,
     profileFieldsResult,
     ownedVenueResult,
+    submissionsResult,
   ] = await Promise.all([
     supabase
       .from("rsvps")
@@ -54,6 +56,15 @@ export default async function ProfilePage() {
     // Only used to decide which of "claim a venue"/"manage your venue" to
     // show below — a venue owner has already been through the claim flow.
     supabase.from("venues").select("id").eq("owner_id", user.id).limit(1),
+    // Only pending/rejected — an approved submission is just a normal show
+    // at that point, surfaced (if RSVP'd) through "your shows" above, not
+    // duplicated here. See docs/designdoc.md §9 Phase 4 item 1.
+    supabase
+      .from("events")
+      .select("id, title, start_time, status")
+      .eq("host_id", user.id)
+      .in("status", ["pending", "rejected"])
+      .order("start_time", { ascending: false }),
   ]);
 
   const rsvps = rsvpsResult.data ?? [];
@@ -61,6 +72,12 @@ export default async function ProfilePage() {
   const saved = rsvps.filter((r) => r.saved);
   const tree = (treeResult.data ?? []) as InviteTreeRow[];
   const ownsVenue = (ownedVenueResult.data ?? []).length > 0;
+  const submissions: SubmittedEvent[] = (submissionsResult.data ?? []).map((e) => ({
+    id: e.id,
+    title: e.title,
+    startTime: e.start_time,
+    status: e.status as "pending" | "rejected",
+  }));
   if (inviterResult.error) {
     throw new Error(
       `Failed to load inviter: ${inviterResult.error.message}`,
@@ -156,7 +173,22 @@ export default async function ProfilePage() {
           ) : (
             <ShowList going={going} saved={saved} />
           )}
+          <Link
+            href="/events/new"
+            className="bg-ink text-btn-on-ink rounded-[2px] py-3.5 text-sm font-medium w-full text-center block"
+          >
+            Submit an event
+          </Link>
         </section>
+
+        {submissions.length > 0 && (
+          <section className="space-y-3">
+            <h2 className="font-mono text-[11px] text-kraft uppercase tracking-wide">
+              your submissions
+            </h2>
+            <SubmissionList submissions={submissions} />
+          </section>
+        )}
 
         <section className="space-y-3 border-t border-dashed border-line pt-8">
           <h2 className="font-mono text-[11px] text-kraft uppercase tracking-wide">
@@ -228,6 +260,29 @@ function ShowList({
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function SubmissionList({ submissions }: { submissions: SubmittedEvent[] }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      {submissions.map((s) => (
+        <Link
+          key={s.id}
+          href={`/events/${s.id}/edit`}
+          className="flex items-center justify-between text-sm py-1"
+        >
+          <span>{s.title}</span>
+          <span
+            className={`font-mono text-[11px] uppercase tracking-wide ${
+              s.status === "rejected" ? "text-stamp-red" : "text-kraft"
+            }`}
+          >
+            {s.status}
+          </span>
+        </Link>
+      ))}
     </div>
   );
 }

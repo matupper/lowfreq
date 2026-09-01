@@ -43,6 +43,10 @@ create table users (
   -- db/migrations/0006_venue_claims.sql and the /admin route.
   is_admin boolean not null default false,
   created_at timestamptz not null default now(),
+  -- No self-service grant-admin path — bootstrapped by a one-off UPDATE
+  -- against the live project (service-role/dashboard). See
+  -- db/migrations/0007_admin_review.sql.
+  is_admin boolean not null default false,
   constraint users_handle_format check (handle is null or handle ~ '^[A-Za-z0-9_]{3,20}$')
 );
 
@@ -77,6 +81,15 @@ create table venues (
   created_at timestamptz not null default now()
 );
 
+-- status: user-submitted events (docs/designdoc.md §9 Phase 4 item 1) start
+-- 'pending' and need admin approval before showing up in the public feed
+-- (see the "approved events are publicly readable" policy below and the
+-- explicit .eq("status", "approved") filter in src/app/home/page.tsx —
+-- RLS's "or host_id = auth.uid()" means a host would otherwise see their
+-- own pending submission mixed into their normal feed). Existing/seeded
+-- rows default straight to 'approved'.
+-- poster_url: nullable — absence keeps the generated flyer-card treatment
+-- (see EventCard.tsx). See db/migrations/0008_event_posters.sql.
 create table events (
   id uuid primary key default gen_random_uuid(),
   venue_id uuid references venues(id) not null,
@@ -84,6 +97,8 @@ create table events (
   title text not null,
   description text,
   start_time timestamptz not null,
+  status text not null default 'approved' check (status in ('pending', 'approved', 'rejected')),
+  poster_url text,
   created_at timestamptz not null default now()
 );
 
@@ -205,7 +220,27 @@ alter table user_profiles enable row level security;
 alter table venue_claims enable row level security;
 
 create policy "users can view own row" on users for select using (auth.uid() = id);
-create policy "events are publicly readable" on events for select using (true);
+-- A pending/rejected submission is only visible to its own host — everyone
+-- else only ever sees approved events. See
+-- db/migrations/0006_event_submission.sql.
+create policy "approved events are publicly readable" on events
+  for select using (status = 'approved' or host_id = auth.uid());
+-- Defense-in-depth: even if a client forges the insert payload, RLS
+-- refuses anything that isn't 'pending' — a submission can never land
+-- pre-approved.
+create policy "users can submit pending events" on events
+  for insert with check (auth.uid() = host_id and status = 'pending');
+-- Lets a host edit their own submission before it's approved (or after
+-- it's rejected) — approved events are locked from owner edits. See
+-- db/migrations/0008_event_posters.sql.
+create policy "hosts can edit their own unapproved events" on events
+  for update using (auth.uid() = host_id and status in ('pending', 'rejected'))
+  with check (auth.uid() = host_id and status in ('pending', 'rejected'));
+-- Lets createEvent (src/app/events/new/actions.ts) roll back its own insert
+-- if the follow-up poster upload fails, so a retry doesn't leave a
+-- duplicate pending submission. See db/migrations/0009_event_submission_rollback.sql.
+create policy "hosts can delete their own pending submissions" on events
+  for delete using (auth.uid() = host_id and status = 'pending');
 create policy "venues are publicly readable" on venues for select using (true);
 -- venue_id/event_id are only ever non-null for a venue-issued check-in
 -- code (see the invites table's comment above) — a plain created_by check
@@ -707,6 +742,76 @@ $$;
 
 grant execute on function public.set_avatar_url(text) to authenticated;
 
+-- ── Admin review queue (Phase 4 Track A item 2) ───────────────
+-- Narrow, admin-checked-internally RPCs rather than broadened RLS
+-- select/update policies on events — same narrow-RPC pattern as
+-- set_handle/redeem_invite/revoke_invite (see AGENTS.md). No RLS policy on
+-- `events` grants admins visibility into other hosts' pending rows; these
+-- functions are the only path. See db/migrations/0007_admin_review.sql.
+create or replace function public.list_pending_events()
+returns table (
+  event_id uuid,
+  title text,
+  venue_name text,
+  host_name text,
+  created_at timestamptz
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select e.id, e.title, v.name, u.name, e.created_at
+  from events e
+  join venues v on v.id = e.venue_id
+  join users u on u.id = e.host_id
+  where e.status = 'pending'
+    and exists (select 1 from users a where a.id = auth.uid() and a.is_admin)
+  order by e.created_at asc;
+$$;
+
+grant execute on function public.list_pending_events() to authenticated;
+
+create or replace function public.approve_event(target_event_id uuid)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  updated_id uuid;
+begin
+  update events set status = 'approved'
+  where id = target_event_id and status = 'pending'
+    and exists (select 1 from users a where a.id = auth.uid() and a.is_admin)
+  returning id into updated_id;
+
+  return updated_id is not null;
+end;
+$$;
+
+grant execute on function public.approve_event(uuid) to authenticated;
+
+create or replace function public.reject_event(target_event_id uuid)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  updated_id uuid;
+begin
+  update events set status = 'rejected'
+  where id = target_event_id and status = 'pending'
+    and exists (select 1 from users a where a.id = auth.uid() and a.is_admin)
+  returning id into updated_id;
+
+  return updated_id is not null;
+end;
+$$;
+
+grant execute on function public.reject_event(uuid) to authenticated;
+
 -- ── Avatar storage ───────────────────────────────────────────
 -- Public bucket (avatars are meant to be displayed everywhere a user
 -- appears), one object per user at `<user_id>/avatar.<ext>` — writes
@@ -749,4 +854,60 @@ create policy "users can delete their own avatar"
   using (
     bucket_id = 'avatars'
     and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+-- ── Event poster storage ─────────────────────────────────────
+-- Per-event (not per-user like avatars): one object per event at
+-- `<event_id>/poster.<ext>`. Public read, writes scoped through a subquery
+-- against events.host_id rather than the avatar bucket's simpler
+-- foldername-equals-uid check, since the folder here is an event id, not
+-- the uploader's own id. See db/migrations/0008_event_posters.sql.
+insert into storage.buckets (id, name, public)
+values ('event-posters', 'event-posters', true)
+on conflict (id) do nothing;
+
+drop policy if exists "event posters are publicly readable" on storage.objects;
+drop policy if exists "hosts can upload their own event poster" on storage.objects;
+drop policy if exists "hosts can replace their own event poster" on storage.objects;
+drop policy if exists "hosts can delete their own event poster" on storage.objects;
+
+create policy "event posters are publicly readable"
+  on storage.objects for select
+  using (bucket_id = 'event-posters');
+
+create policy "hosts can upload their own event poster"
+  on storage.objects for insert
+  with check (
+    bucket_id = 'event-posters'
+    and exists (
+      select 1 from events e
+      where e.id::text = (storage.foldername(name))[1] and e.host_id = auth.uid()
+    )
+  );
+
+create policy "hosts can replace their own event poster"
+  on storage.objects for update
+  using (
+    bucket_id = 'event-posters'
+    and exists (
+      select 1 from events e
+      where e.id::text = (storage.foldername(name))[1] and e.host_id = auth.uid()
+    )
+  )
+  with check (
+    bucket_id = 'event-posters'
+    and exists (
+      select 1 from events e
+      where e.id::text = (storage.foldername(name))[1] and e.host_id = auth.uid()
+    )
+  );
+
+create policy "hosts can delete their own event poster"
+  on storage.objects for delete
+  using (
+    bucket_id = 'event-posters'
+    and exists (
+      select 1 from events e
+      where e.id::text = (storage.foldername(name))[1] and e.host_id = auth.uid()
+    )
   );

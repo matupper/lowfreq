@@ -26,4 +26,20 @@ export type EventWithVenue = {
   // the `attendance` table (docs/designdoc.md §6.1), kept independent of
   // going/saved.
   attendedAt: string | null;
+  // Host-uploaded poster (docs/designdoc.md §9 Phase 4 item 3) — null keeps
+  // today's generated flyer-card treatment. See EventCard.tsx.
+  posterUrl: string | null;
+};
+
+// A submitter's own event, shown on their profile's "your submissions"
+// section — deliberately separate from EventWithVenue rather than adding a
+// status field there (see docs/designdoc.md §9 Phase 4 item 1's plan
+// reference): the main feed type has no use for status once it's always
+// filtered to 'approved', and a host's pending/rejected row never needs
+// venue/RSVP/attendance metadata the way a feed card does.
+export type SubmittedEvent = {
+  id: string;
+  title: string;
+  startTime: string;
+  status: "pending" | "rejected";
 };

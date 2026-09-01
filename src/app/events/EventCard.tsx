@@ -54,6 +54,12 @@ export default function EventCard({
         focused ? "ring-2 ring-riso-pink" : ""
       }`}
     >
+      {event.posterUrl && (
+        <div
+          className="-mx-5 -mt-5 mb-4 aspect-[4/3] bg-surface-2 bg-cover bg-center rounded-t-[1px]"
+          style={{ backgroundImage: `url(${event.posterUrl})` }}
+        />
+      )}
       <h2 className="font-display text-2xl leading-tight tracking-wide">
         {event.title}
       </h2>

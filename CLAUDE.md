@@ -86,7 +86,11 @@ shared between list and map views so RSVP/save behave identically in
 both places; the map expands a pin into that same card in place rather
 than navigating away. Both views can jump to the other's matching card
 ("view on map" from a list card, "view in list" from the map's
-expanded card).
+expanded card). `EventCard` also renders a host-uploaded poster
+(`events.poster_url`, docs/designdoc.md §9 Phase 4 item 3) as the
+card's header image when present, falling back to today's pure-text
+treatment when absent — shared automatically by both views since it's
+the one component.
 
 maplibre-gl needs its `import.meta.url`-derived tile-loading worker URL
 overridden via `setWorkerUrl()` (called at module scope in EventMap.tsx) —
@@ -125,9 +129,12 @@ Profile always navigates via a real link. From any other route (e.g.
 Phase 4 (docs/designdoc.md §9). `users.is_admin` is bootstrapped by hand
 against the live project (no self-service "grant admin" UI, deliberately)
 and gates `/admin` (server-side redirect if not admin — UX only, not the
-real boundary) plus every admin RPC internally. Admin-only mutations go
-through narrow security-definer RPCs, not broadened RLS policies — same
-pattern as `redeem_invite`/`revoke_invite`: `list_pending_venue_claims`/
+real boundary) plus every admin RPC internally. `/admin` has two sections
+on one page (`src/app/admin/page.tsx`): pending events (Track A —
+`list_pending_events`/`approve_event`/`reject_event`) and pending venue
+claims (Track B — see below). Admin-only mutations go through narrow
+security-definer RPCs, not broadened RLS policies — same pattern as
+`redeem_invite`/`revoke_invite`: `list_pending_venue_claims`/
 `approve_venue_claim`/`reject_venue_claim` (db/migrations/0006_venue_claims.sql).
 
 **Venue claiming.** `venue_claims` is a separate table from `venues`, not
@@ -188,6 +195,13 @@ for registration.
   (or registering a brand-new one) is a shipped Phase 4 feature — see
   "Admin & venue claiming/check-in" above — but `owner_id` is still only
   ever set via `approve_venue_claim`, never a direct client update.
+- events.status (pending/approved/rejected, default approved) gates the
+  public feed — src/app/home/page.tsx's query filters on it explicitly
+  rather than relying on RLS alone, since RLS's own-row exception for a
+  host would otherwise leak their pending submission into their normal
+  feed. users.is_admin is a plain boolean checked internally by
+  list_pending_events/approve_event/reject_event (db/schema.sql), not
+  exposed via RLS — see docs/designdoc.md §9 Phase 4.
 
 ## Build order
 Auth, event browse/RSVP, invite gating, location verification (expiry
@@ -195,11 +209,11 @@ enforcement, GPS-checked invites, attendance/"I Was There"), and profile
 fields (avatar, handle, bio, music identity — see docs/designdoc.md
 §4.7/§4.15 and AGENTS.md's notes on the `users`-mutation RPC pattern and
 avatar storage) are all built, including the attendance denied-location
-decision (see "Attendance" above). From Phase 4 (§9), admin/venue
-claiming and venue check-in QR are built (see "Admin & venue
-claiming/check-in" above); check `git log`/open PRs for the status of
-Phase 4's other items (user-submitted events, custom event posters). For
-what's next, see docs/designdoc.md §9.
+decision (see "Attendance" above). Phase 4 (§9) is fully built: Track A
+— user-submitted events, the admin review queue (`/admin`, no BottomNav
+entry), and custom event poster upload (§4.12/§4.12a) — and Track B —
+admin/venue claiming and venue check-in QR (see "Admin & venue
+claiming/check-in" above). For what's next, see docs/designdoc.md §9.
 
 Signed-in sessions persist across browser restarts (~90 days) via a
 `maxAge` override on the Supabase session cookie — see
