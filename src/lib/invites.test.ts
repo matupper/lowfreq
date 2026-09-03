@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  CHECKIN_EXPIRY_HOURS,
+  checkinExpiresAt,
+  checkinJoinUrl,
   effectiveInviteStatus,
   formatInviteToken,
   generateInviteToken,
@@ -64,6 +67,24 @@ describe("inviteExpiresAt", () => {
     const from = new Date("2026-01-01T00:00:00.000Z");
     const expiresAt = new Date(inviteExpiresAt(from));
     expect(expiresAt.getTime() - from.getTime()).toBe(INVITE_EXPIRY_MINUTES * 60 * 1000);
+  });
+});
+
+describe("checkinJoinUrl", () => {
+  it("builds a /checkin deep link carrying the raw token as a path segment", () => {
+    expect(checkinJoinUrl("https://lowfreq.app", "K7RX9QPL")).toBe(
+      "https://lowfreq.app/checkin/K7RX9QPL"
+    );
+  });
+});
+
+describe("checkinExpiresAt", () => {
+  it("returns a timestamp CHECKIN_EXPIRY_HOURS after the event's start time, not from now", () => {
+    const eventStart = new Date("2026-01-01T20:00:00.000Z");
+    const expiresAt = new Date(checkinExpiresAt(eventStart));
+    expect(expiresAt.getTime() - eventStart.getTime()).toBe(
+      CHECKIN_EXPIRY_HOURS * 60 * 60 * 1000
+    );
   });
 });
 

@@ -37,11 +37,17 @@ export default async function HomePage({ searchParams }: PageProps<"/home">) {
   const windowStart = new Date();
   windowStart.setHours(windowStart.getHours() - ATTENDANCE_WINDOW_HOURS);
 
+  // RLS's "approved events are publicly readable" policy also lets a host
+  // select their own pending/rejected submissions (`or host_id =
+  // auth.uid()`), so this explicit filter is load-bearing, not redundant —
+  // without it a host would see their own unapproved submission mixed into
+  // their normal feed. See db/migrations/0006_event_submission.sql.
   const { data: rawEvents } = await supabase
     .from("events")
     .select(
-      "id, title, description, start_time, venue:venues(id, name, address, lat, lng)"
+      "id, title, description, start_time, poster_url, venue:venues(id, name, address, lat, lng)"
     )
+    .eq("status", "approved")
     .gte("start_time", windowStart.toISOString())
     .order("start_time", { ascending: true });
 
@@ -95,6 +101,7 @@ export default async function HomePage({ searchParams }: PageProps<"/home">) {
       mySaved: myRsvpByEvent.get(e.id)?.saved ?? false,
       hasStarted: new Date(e.start_time) <= now,
       attendedAt: myAttendanceByEvent.get(e.id) ?? null,
+      posterUrl: e.poster_url,
     }));
 
   return (
