@@ -118,6 +118,7 @@ function makeEvent(overrides: Partial<EventWithVenue> = {}): EventWithVenue {
     mySaved: false,
     hasStarted: false,
     attendedAt: null,
+    posterUrl: null,
     ...overrides,
   };
 }

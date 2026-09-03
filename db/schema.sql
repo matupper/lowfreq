@@ -12,6 +12,7 @@ drop trigger if exists on_auth_user_created on auth.users;
 drop function if exists public.handle_new_user();
 
 drop table if exists user_profiles cascade;
+drop table if exists venue_claims cascade;
 drop table if exists attendance cascade;
 drop table if exists rsvps cascade;
 drop table if exists events cascade;
@@ -37,7 +38,15 @@ create table users (
   handle text,
   avatar_url text,
   invited_by uuid,
+  -- Bootstrapped by hand against the live project (no self-service "grant
+  -- admin" UI, deliberately) — gates the admin-review RPCs in
+  -- db/migrations/0006_venue_claims.sql and the /admin route.
+  is_admin boolean not null default false,
   created_at timestamptz not null default now(),
+  -- No self-service grant-admin path — bootstrapped by a one-off UPDATE
+  -- against the live project (service-role/dashboard). See
+  -- db/migrations/0007_admin_review.sql.
+  is_admin boolean not null default false,
   constraint users_handle_format check (handle is null or handle ~ '^[A-Za-z0-9_]{3,20}$')
 );
 
@@ -72,6 +81,15 @@ create table venues (
   created_at timestamptz not null default now()
 );
 
+-- status: user-submitted events (docs/designdoc.md §9 Phase 4 item 1) start
+-- 'pending' and need admin approval before showing up in the public feed
+-- (see the "approved events are publicly readable" policy below and the
+-- explicit .eq("status", "approved") filter in src/app/home/page.tsx —
+-- RLS's "or host_id = auth.uid()" means a host would otherwise see their
+-- own pending submission mixed into their normal feed). Existing/seeded
+-- rows default straight to 'approved'.
+-- poster_url: nullable — absence keeps the generated flyer-card treatment
+-- (see EventCard.tsx). See db/migrations/0008_event_posters.sql.
 create table events (
   id uuid primary key default gen_random_uuid(),
   venue_id uuid references venues(id) not null,
@@ -79,8 +97,27 @@ create table events (
   title text not null,
   description text,
   start_time timestamptz not null,
+  status text not null default 'approved' check (status in ('pending', 'approved', 'rejected')),
+  poster_url text,
   created_at timestamptz not null default now()
 );
+
+-- Venue-issued check-in codes (docs/designdoc.md §3.1/§4.16, §9 Phase 4)
+-- reuse the `invites` table rather than becoming a new one — venue_id/
+-- event_id are null for a normal peer invite, set for a venue's printed
+-- code. reusable=true is what makes redeem_invite (below) skip the
+-- single-use status flip: a printed poster gets scanned by many people
+-- over one show, not once by one person. Added via ALTER rather than
+-- inline on invites' own create table above since venues/events don't
+-- exist yet at that point in this file.
+alter table invites add column venue_id uuid references venues(id);
+alter table invites add column event_id uuid references events(id);
+alter table invites add column reusable boolean not null default false;
+
+-- At most one reusable code per event — guards the "check for an existing
+-- code, else create one" flow in src/app/venues/mine/actions.ts against a
+-- double-click race producing two live codes for the same show.
+create unique index invites_event_reusable_idx on invites (event_id) where reusable;
 
 -- Going and saved are independent facts about one user/event pair, not a
 -- single enum: a show can be saved without going, going without being
@@ -125,6 +162,26 @@ create table user_profiles (
   updated_at timestamptz not null default now()
 );
 
+-- Venue claiming/registration (docs/designdoc.md §9 Phase 4): covers both
+-- "claim an existing unclaimed venue" (venue_id set) and "register a
+-- brand-new one" (venue_id null, venue_name/address/lat/lng filled
+-- instead). Separate from `venues` rather than a status column bolted on
+-- directly — see db/migrations/0006_venue_claims.sql for why a naive
+-- owner-scoped update policy on venues itself would be a self-approval bug.
+create table venue_claims (
+  id uuid primary key default gen_random_uuid(),
+  venue_id uuid references venues(id),
+  claimant_id uuid references users(id) not null,
+  venue_name text,
+  venue_address text,
+  venue_lat double precision,
+  venue_lng double precision,
+  note text,
+  status text not null default 'pending' check (status in ('pending', 'approved', 'rejected')),
+  created_at timestamptz not null default now(),
+  reviewed_at timestamptz
+);
+
 -- ── Indexes ──────────────────────────────────────────────────
 create index events_start_time_idx on events (start_time);
 create index rsvps_event_id_idx on rsvps (event_id);
@@ -160,12 +217,52 @@ alter table events enable row level security;
 alter table rsvps enable row level security;
 alter table attendance enable row level security;
 alter table user_profiles enable row level security;
+alter table venue_claims enable row level security;
 
 create policy "users can view own row" on users for select using (auth.uid() = id);
-create policy "events are publicly readable" on events for select using (true);
+-- A pending/rejected submission is only visible to its own host — everyone
+-- else only ever sees approved events. See
+-- db/migrations/0006_event_submission.sql.
+create policy "approved events are publicly readable" on events
+  for select using (status = 'approved' or host_id = auth.uid());
+-- Defense-in-depth: even if a client forges the insert payload, RLS
+-- refuses anything that isn't 'pending' — a submission can never land
+-- pre-approved.
+create policy "users can submit pending events" on events
+  for insert with check (auth.uid() = host_id and status = 'pending');
+-- Lets a host edit their own submission before it's approved (or after
+-- it's rejected) — approved events are locked from owner edits. See
+-- db/migrations/0008_event_posters.sql.
+create policy "hosts can edit their own unapproved events" on events
+  for update using (auth.uid() = host_id and status in ('pending', 'rejected'))
+  with check (auth.uid() = host_id and status in ('pending', 'rejected'));
+-- Lets createEvent (src/app/events/new/actions.ts) roll back its own insert
+-- if the follow-up poster upload fails, so a retry doesn't leave a
+-- duplicate pending submission. See db/migrations/0009_event_submission_rollback.sql.
+create policy "hosts can delete their own pending submissions" on events
+  for delete using (auth.uid() = host_id and status = 'pending');
 create policy "venues are publicly readable" on venues for select using (true);
-create policy "users can create their own invites" on invites for insert with check (auth.uid() = created_by);
+-- venue_id/event_id are only ever non-null for a venue-issued check-in
+-- code (see the invites table's comment above) — a plain created_by check
+-- was sufficient while every invite was a peer stamp with nothing to
+-- forge; now it also requires venue_id to be a venue the caller owns, and
+-- a non-null event_id to actually belong to that venue, so an
+-- authenticated user can't self-issue a check-in code for a venue/event
+-- they don't own.
+create policy "users can create their own invites" on invites for insert with check (
+  auth.uid() = created_by
+  and (
+    venue_id is null
+    or exists (select 1 from venues v where v.id = venue_id and v.owner_id = auth.uid())
+  )
+  and (
+    event_id is null
+    or exists (select 1 from events e where e.id = event_id and e.venue_id = invites.venue_id)
+  )
+);
 create policy "users can view their own invites" on invites for select using (auth.uid() = created_by);
+create policy "users can submit their own claims" on venue_claims for insert with check (auth.uid() = claimant_id);
+create policy "users can view their own claims" on venue_claims for select using (auth.uid() = claimant_id);
 create policy "users can view their own rsvps" on rsvps for select using (auth.uid() = user_id);
 create policy "users can create their own rsvps" on rsvps for insert with check (auth.uid() = user_id);
 -- Needed so a user can toggle going/saved independently (an upsert on the
@@ -333,6 +430,16 @@ grant execute on function public.invite_location(text) to authenticated, anon;
 -- refuses (and lazily flips to 'expired') a token whose expires_at has
 -- passed. Returns the stored lat/lng too, so the caller's GPS check is
 -- redone against this atomic read rather than trusted from an earlier peek.
+--
+-- reusable=true (venue check-in codes, docs/designdoc.md §3.1/§4.16) is a
+-- real behavioral fork here, not an additive change: a printed poster is
+-- scanned by many different people over one show, so it must never flip
+-- to 'used' — the status-flipping UPDATE below only ever runs for the
+-- non-reusable (peer-invite) branch. The lazy expired-flip above still
+-- runs unconditionally for both, so a reusable code past its
+-- event-scoped expiry (src/lib/invites.ts:checkinExpiresAt) correctly
+-- stops working. No rate limit/redemption cap on the reusable branch —
+-- captain decision 2026-08-26, see db/migrations/0007_venue_checkin.sql.
 create or replace function public.redeem_invite(invite_token text)
 returns table (invite_id uuid, created_by uuid, lat double precision, lng double precision)
 language plpgsql
@@ -344,6 +451,7 @@ declare
   found_created_by uuid;
   found_lat double precision;
   found_lng double precision;
+  is_reusable boolean;
 begin
   update invites
   set status = 'expired'
@@ -352,11 +460,27 @@ begin
     and expires_at is not null
     and expires_at <= now();
 
-  update invites
-  set status = 'used', used_at = now()
-  where token = invite_token and status = 'unused'
-  returning id, invites.created_by, invites.lat, invites.lng
-    into found_id, found_created_by, found_lat, found_lng;
+  select reusable into is_reusable from invites where token = invite_token;
+
+  if is_reusable then
+    -- Table-qualified, unlike a bare `select id, created_by, lat, lng`
+    -- here — this function's own OUT parameters are named created_by/lat/
+    -- lng too (see the RETURNS TABLE clause above), and plpgsql resolves
+    -- an unqualified column name against its own variables first. Without
+    -- the `invites.` prefix, this throws "column reference ... is
+    -- ambiguous" at call time — caught by actually invoking this against
+    -- lowfreq-dev, not by reading the SQL.
+    select invites.id, invites.created_by, invites.lat, invites.lng
+      into found_id, found_created_by, found_lat, found_lng
+      from invites
+      where token = invite_token and status = 'unused';
+  else
+    update invites
+    set status = 'used', used_at = now()
+    where token = invite_token and status = 'unused'
+    returning id, invites.created_by, invites.lat, invites.lng
+      into found_id, found_created_by, found_lat, found_lng;
+  end if;
 
   if found_id is null then
     return;
@@ -367,6 +491,25 @@ end;
 $$;
 
 grant execute on function public.redeem_invite(text) to authenticated, anon;
+
+-- Peek-only, mirrors invite_location's contract: lets /checkin/[token]
+-- (both the no-session registration branch and the session-present
+-- attendance branch) learn which event/venue a scanned code belongs to,
+-- and whether it's a reusable venue code at all, without consuming
+-- anything or requiring a session. Returned regardless of status (unlike
+-- invite_location) so the check-in page can show a specific "this code
+-- expired" message rather than a bare not-found.
+create or replace function public.invite_checkin_info(invite_token text)
+returns table (event_id uuid, venue_id uuid, reusable boolean)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select event_id, venue_id, reusable from invites where token = invite_token;
+$$;
+
+grant execute on function public.invite_checkin_info(text) to authenticated, anon;
 
 -- Lets the creator void a stamp before anyone's redeemed it (generated by
 -- mistake, or handed out and reconsidered). Narrow on purpose: only the
@@ -463,6 +606,114 @@ $$;
 
 grant execute on function public.get_my_inviter() to authenticated;
 
+-- ── Venue claims (admin review) ───────────────────────────────
+-- Admin-only reads/mutations go through security-definer RPCs (same
+-- narrow-function pattern as redeem_invite/revoke_invite) rather than an
+-- admin-scoped RLS select/update policy on venue_claims — one function,
+-- one state transition, internally admin-gated. is_admin is bootstrapped
+-- by hand against the live project; there's no self-service "grant admin"
+-- UI, deliberately.
+create or replace function public.list_pending_venue_claims()
+returns table (
+  claim_id uuid,
+  venue_id uuid,
+  claimant_id uuid,
+  claimant_name text,
+  venue_name text,
+  venue_address text,
+  venue_lat double precision,
+  venue_lng double precision,
+  existing_venue_name text,
+  note text,
+  created_at timestamptz
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select c.id, c.venue_id, c.claimant_id, u.name, c.venue_name, c.venue_address,
+    c.venue_lat, c.venue_lng, v.name, c.note, c.created_at
+  from venue_claims c
+  join users u on u.id = c.claimant_id
+  left join venues v on v.id = c.venue_id
+  where c.status = 'pending'
+    and exists (select 1 from users a where a.id = auth.uid() and a.is_admin)
+  order by c.created_at asc;
+$$;
+
+grant execute on function public.list_pending_venue_claims() to authenticated;
+
+-- The trickiest new logic in this item — an atomic insert-or-update branch,
+-- the closest analog to redeem_invite's "one function, one state
+-- transition, admin-gated": a claim against an existing unclaimed venue
+-- (venue_id set) updates that venue's owner_id; a claim for a brand-new
+-- venue (venue_id null) inserts the venue first and records its id back
+-- onto the claim.
+create or replace function public.approve_venue_claim(claim_id uuid)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  c record;
+  new_venue_id uuid;
+begin
+  if not exists (select 1 from users a where a.id = auth.uid() and a.is_admin) then
+    return false;
+  end if;
+
+  select * into c from venue_claims where id = claim_id and status = 'pending';
+  if not found then
+    return false;
+  end if;
+
+  if c.venue_id is null then
+    insert into venues (name, address, lat, lng, owner_id)
+    values (c.venue_name, c.venue_address, c.venue_lat, c.venue_lng, c.claimant_id)
+    returning id into new_venue_id;
+
+    update venue_claims set venue_id = new_venue_id, status = 'approved', reviewed_at = now()
+      where id = claim_id;
+  else
+    update venues set owner_id = c.claimant_id
+      where id = c.venue_id and owner_id is null;
+    if not found then
+      return false;
+    end if;
+
+    update venue_claims set status = 'approved', reviewed_at = now() where id = claim_id;
+  end if;
+
+  return true;
+end;
+$$;
+
+grant execute on function public.approve_venue_claim(uuid) to authenticated;
+
+create or replace function public.reject_venue_claim(claim_id uuid)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  updated_id uuid;
+begin
+  update venue_claims
+  set status = 'rejected', reviewed_at = now()
+  where id = claim_id
+    and status = 'pending'
+    and exists (select 1 from users a where a.id = auth.uid() and a.is_admin)
+  returning id into updated_id;
+
+  return updated_id is not null;
+end;
+$$;
+
+grant execute on function public.reject_venue_claim(uuid) to authenticated;
+
 -- ── Profile fields (handle, avatar) ───────────────────────────
 -- Narrow, single-column mutation RPCs rather than an RLS UPDATE policy on
 -- `users` — see db/migrations/0005_profile_fields.sql for why (users also
@@ -490,6 +741,76 @@ as $$
 $$;
 
 grant execute on function public.set_avatar_url(text) to authenticated;
+
+-- ── Admin review queue (Phase 4 Track A item 2) ───────────────
+-- Narrow, admin-checked-internally RPCs rather than broadened RLS
+-- select/update policies on events — same narrow-RPC pattern as
+-- set_handle/redeem_invite/revoke_invite (see AGENTS.md). No RLS policy on
+-- `events` grants admins visibility into other hosts' pending rows; these
+-- functions are the only path. See db/migrations/0007_admin_review.sql.
+create or replace function public.list_pending_events()
+returns table (
+  event_id uuid,
+  title text,
+  venue_name text,
+  host_name text,
+  created_at timestamptz
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select e.id, e.title, v.name, u.name, e.created_at
+  from events e
+  join venues v on v.id = e.venue_id
+  join users u on u.id = e.host_id
+  where e.status = 'pending'
+    and exists (select 1 from users a where a.id = auth.uid() and a.is_admin)
+  order by e.created_at asc;
+$$;
+
+grant execute on function public.list_pending_events() to authenticated;
+
+create or replace function public.approve_event(target_event_id uuid)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  updated_id uuid;
+begin
+  update events set status = 'approved'
+  where id = target_event_id and status = 'pending'
+    and exists (select 1 from users a where a.id = auth.uid() and a.is_admin)
+  returning id into updated_id;
+
+  return updated_id is not null;
+end;
+$$;
+
+grant execute on function public.approve_event(uuid) to authenticated;
+
+create or replace function public.reject_event(target_event_id uuid)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  updated_id uuid;
+begin
+  update events set status = 'rejected'
+  where id = target_event_id and status = 'pending'
+    and exists (select 1 from users a where a.id = auth.uid() and a.is_admin)
+  returning id into updated_id;
+
+  return updated_id is not null;
+end;
+$$;
+
+grant execute on function public.reject_event(uuid) to authenticated;
 
 -- ── Avatar storage ───────────────────────────────────────────
 -- Public bucket (avatars are meant to be displayed everywhere a user
@@ -533,4 +854,60 @@ create policy "users can delete their own avatar"
   using (
     bucket_id = 'avatars'
     and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+-- ── Event poster storage ─────────────────────────────────────
+-- Per-event (not per-user like avatars): one object per event at
+-- `<event_id>/poster.<ext>`. Public read, writes scoped through a subquery
+-- against events.host_id rather than the avatar bucket's simpler
+-- foldername-equals-uid check, since the folder here is an event id, not
+-- the uploader's own id. See db/migrations/0008_event_posters.sql.
+insert into storage.buckets (id, name, public)
+values ('event-posters', 'event-posters', true)
+on conflict (id) do nothing;
+
+drop policy if exists "event posters are publicly readable" on storage.objects;
+drop policy if exists "hosts can upload their own event poster" on storage.objects;
+drop policy if exists "hosts can replace their own event poster" on storage.objects;
+drop policy if exists "hosts can delete their own event poster" on storage.objects;
+
+create policy "event posters are publicly readable"
+  on storage.objects for select
+  using (bucket_id = 'event-posters');
+
+create policy "hosts can upload their own event poster"
+  on storage.objects for insert
+  with check (
+    bucket_id = 'event-posters'
+    and exists (
+      select 1 from events e
+      where e.id::text = (storage.foldername(name))[1] and e.host_id = auth.uid()
+    )
+  );
+
+create policy "hosts can replace their own event poster"
+  on storage.objects for update
+  using (
+    bucket_id = 'event-posters'
+    and exists (
+      select 1 from events e
+      where e.id::text = (storage.foldername(name))[1] and e.host_id = auth.uid()
+    )
+  )
+  with check (
+    bucket_id = 'event-posters'
+    and exists (
+      select 1 from events e
+      where e.id::text = (storage.foldername(name))[1] and e.host_id = auth.uid()
+    )
+  );
+
+create policy "hosts can delete their own event poster"
+  on storage.objects for delete
+  using (
+    bucket_id = 'event-posters'
+    and exists (
+      select 1 from events e
+      where e.id::text = (storage.foldername(name))[1] and e.host_id = auth.uid()
+    )
   );

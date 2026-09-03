@@ -68,13 +68,13 @@ or writes going/saved, and vice versa. GPS-based confirmation
 (`confirmAttendance` in src/app/events/actions.ts) is live.
 
 If location permission is denied or a GPS fix fails, confirmation is
-strictly GPS-or-nothing — no manual fallback (docs/designdoc.md §10,
-captain decision). This was chosen deliberately, not a stopgap to
-revisit casually: revisit specifically once the venue-printed check-in
-QR (§3.1, Phase 4) ships, since that gives bad-signal venues (e.g. a
-basement show) a real alternative confirmation path
-(`attendance.method = 'venue_qr'`) without weakening what a GPS-based
-confirmation claims to verify.
+strictly GPS-or-nothing — no manual fallback for the `gps` method
+(docs/designdoc.md §10, captain decision). The venue-printed check-in QR
+(§3.1, Phase 4) has since shipped as the alternative that decision
+anticipated: `confirmAttendance` (src/app/events/actions.ts) takes a
+`method: "gps" | "venue_qr"` param, and `venue_qr` skips the
+GPS/proximity check entirely — see "Admin & venue claiming/check-in"
+below for the full path.
 
 ## Event map
 Map view (src/app/events/EventMap.tsx) is a core/flagship feature, not
@@ -86,7 +86,11 @@ shared between list and map views so RSVP/save behave identically in
 both places; the map expands a pin into that same card in place rather
 than navigating away. Both views can jump to the other's matching card
 ("view on map" from a list card, "view in list" from the map's
-expanded card).
+expanded card). `EventCard` also renders a host-uploaded poster
+(`events.poster_url`, docs/designdoc.md §9 Phase 4 item 3) as the
+card's header image when present, falling back to today's pure-text
+treatment when absent — shared automatically by both views since it's
+the one component.
 
 maplibre-gl needs its `import.meta.url`-derived tile-loading worker URL
 overridden via `setWorkerUrl()` (called at module scope in EventMap.tsx) —
@@ -121,6 +125,63 @@ Profile always navigates via a real link. From any other route (e.g.
 `/profile`), BottomNav falls back to plain links (`/home`,
 `/home?view=map`) since it has no local view state to switch there.
 
+## Admin & venue claiming/check-in
+Phase 4 (docs/designdoc.md §9). `users.is_admin` is bootstrapped by hand
+against the live project (no self-service "grant admin" UI, deliberately)
+and gates `/admin` (server-side redirect if not admin — UX only, not the
+real boundary) plus every admin RPC internally. `/admin` has two sections
+on one page (`src/app/admin/page.tsx`): pending events (Track A —
+`list_pending_events`/`approve_event`/`reject_event`) and pending venue
+claims (Track B — see below). Admin-only mutations go through narrow
+security-definer RPCs, not broadened RLS policies — same pattern as
+`redeem_invite`/`revoke_invite`: `list_pending_venue_claims`/
+`approve_venue_claim`/`reject_venue_claim` (db/migrations/0006_venue_claims.sql).
+
+**Venue claiming.** `venue_claims` is a separate table from `venues`, not
+a status column on it — a naive owner-scoped `update` policy letting a
+user set `venues.owner_id = auth.uid()` directly is exactly the
+self-approval bug shape the RPC-not-RLS-update note above warns about.
+Covers both "claim an existing unclaimed venue" (`venue_id` set) and
+"register a brand-new one" (`venue_id` null, `venue_name`/`venue_address`/
+`venue_lat`/`venue_lng` filled instead) — `approve_venue_claim` branches
+on that atomically (insert-then-link vs. update-owner). `src/app/venues/
+claim/page.tsx` is the self-contained claim/register form; deliberately
+no identity-verification UI, per §3.1 — manual human review is the point.
+
+**Venue check-in QR.** Reuses the `invites` table rather than a new one —
+`venue_id`/`event_id`/`reusable` columns are null for a normal peer
+invite, set for a venue's printed code (`src/app/venues/mine/actions.ts`'s
+`getOrCreateCheckinCode`, one reusable code per event via a partial unique
+index). `redeem_invite` has a real behavioral fork for `reusable = true`:
+it skips the single-use status-flipping `UPDATE` and just re-selects the
+row instead, so a printed poster keeps working for every scanner all
+show long. **That reusable-branch `select` must table-qualify
+`created_by`/`lat`/`lng`** (`select invites.created_by, invites.lat,
+invites.lng ...`) — this function's own `RETURNS TABLE` OUT parameters
+share those exact names, so an unqualified `select id, created_by, lat,
+lng` throws "column reference is ambiguous" at call time in plpgsql. This
+shipped broken once and was only caught by actually invoking the RPC
+against `lowfreq-dev`, not by reading the SQL — re-verify any future edit
+to this function by calling it live, not just reviewing the diff.
+`inviteExpiresAt`'s flat 5-minute window doesn't fit a code meant to last
+a whole show — `checkinExpiresAt`/`CHECKIN_EXPIRY_HOURS` (src/lib/
+invites.ts) give it an event-duration-scoped expiry instead (mirrors
+`ATTENDANCE_WINDOW_HOURS`, duplicated rather than imported since src/lib
+shouldn't reach into src/app).
+
+`/checkin/[token]` (public, not in `src/proxy.ts`'s `PROTECTED_PATHS` —
+the venue's printed QR is scanned by the phone's own camera app with no
+session guaranteed) is the printed poster's actual destination, not a
+reuse of `ScanCamera.tsx` (which hard-codes a `/signup` redirect
+regardless of session state). It branches three ways per §3.1: invalid/
+expired code; no session → registration, reusing `RegisterForm`/
+`registerWithInvite` as-is (they don't need to know the invite is a venue
+code); session present → `confirmCheckinAttendance` redeems the invite
+then calls `confirmAttendance(eventId, null, "venue_qr")` directly, no GPS
+involved. Redeeming first (rather than trusting the token) is what makes
+an expired/revoked venue code stop working here too, the same way it does
+for registration.
+
 ## Data model notes
 - public.users.id is the SAME id as auth.users.id (Supabase Auth), linked
   via a foreign key + trigger (handle_new_user). Never manually insert
@@ -130,8 +191,17 @@ Profile always navigates via a real link. From any other route (e.g.
   without being saved, or both. No "interested" state; there's no
   separate "saved events" table by design, to avoid an extra join. See
   docs/designdoc.md §6.
-- venues.owner_id is nullable — most venues start unclaimed; "claiming"
-  a venue is a later feature, not MVP.
+- venues.owner_id is nullable — most venues start unclaimed. Claiming one
+  (or registering a brand-new one) is a shipped Phase 4 feature — see
+  "Admin & venue claiming/check-in" above — but `owner_id` is still only
+  ever set via `approve_venue_claim`, never a direct client update.
+- events.status (pending/approved/rejected, default approved) gates the
+  public feed — src/app/home/page.tsx's query filters on it explicitly
+  rather than relying on RLS alone, since RLS's own-row exception for a
+  host would otherwise leak their pending submission into their normal
+  feed. users.is_admin is a plain boolean checked internally by
+  list_pending_events/approve_event/reject_event (db/schema.sql), not
+  exposed via RLS — see docs/designdoc.md §9 Phase 4.
 
 ## Build order
 Auth, event browse/RSVP, invite gating, location verification (expiry
@@ -139,8 +209,11 @@ enforcement, GPS-checked invites, attendance/"I Was There"), and profile
 fields (avatar, handle, bio, music identity — see docs/designdoc.md
 §4.7/§4.15 and AGENTS.md's notes on the `users`-mutation RPC pattern and
 avatar storage) are all built, including the attendance denied-location
-decision (see "Attendance" above). For what's next, see
-docs/designdoc.md §9.
+decision (see "Attendance" above). Phase 4 (§9) is fully built: Track A
+— user-submitted events, the admin review queue (`/admin`, no BottomNav
+entry), and custom event poster upload (§4.12/§4.12a) — and Track B —
+admin/venue claiming and venue check-in QR (see "Admin & venue
+claiming/check-in" above). For what's next, see docs/designdoc.md §9.
 
 Signed-in sessions persist across browser restarts (~90 days) via a
 `maxAge` override on the Supabase session cookie — see

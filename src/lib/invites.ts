@@ -16,6 +16,20 @@ export function inviteExpiresAt(from: Date = new Date()): string {
   return new Date(from.getTime() + INVITE_EXPIRY_MINUTES * 60 * 1000).toISOString();
 }
 
+// Mirrors ATTENDANCE_WINDOW_HOURS (src/app/events/constants.ts) rather than
+// importing it — a venue check-in code should stay valid for as long as "I
+// Was There" GPS confirmation would still make sense for the same show, but
+// src/lib shouldn't reach into src/app for a single number. A venue's
+// reusable code is scoped to one event (docs/designdoc.md §9 Phase 4), not
+// the flat 5-minute peer-invite window above.
+export const CHECKIN_EXPIRY_HOURS = 6;
+
+export function checkinExpiresAt(eventStartTime: Date): string {
+  return new Date(
+    eventStartTime.getTime() + CHECKIN_EXPIRY_HOURS * 60 * 60 * 1000
+  ).toISOString();
+}
+
 // Raw token stored in invites.token and encoded in the QR — no separators.
 export function generateInviteToken(): string {
   let token = "";
@@ -37,6 +51,13 @@ export function normalizeInviteToken(input: string): string {
 
 export function inviteJoinUrl(origin: string, token: string): string {
   return `${origin}/signup?token=${token}`;
+}
+
+// A venue check-in code's printed QR points here instead of /signup — see
+// /checkin/[token]/page.tsx for the three-way branch (no session/session
+// present) that route renders.
+export function checkinJoinUrl(origin: string, token: string): string {
+  return `${origin}/checkin/${token}`;
 }
 
 export type InviteStatus = "unused" | "used" | "expired" | "revoked";

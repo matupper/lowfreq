@@ -70,3 +70,45 @@ describe("confirmAttendance recency bound", () => {
     expect(upsert).toHaveBeenCalled();
   });
 });
+
+// method: "venue_qr" (Phase 4) is the GPS-independent fork used by
+// /checkin/[token] — the whole point is confirming attendance with no
+// reading at all, which the "gps" method would reject as no_location.
+// Still subject to the same start-time/attendance-window checks as gps.
+describe("confirmAttendance venue_qr method", () => {
+  afterEach(() => {
+    maybeSingle.mockReset();
+    upsert.mockReset();
+    getUser.mockReset();
+  });
+
+  it("confirms attendance with no GPS reading at all", async () => {
+    getUser.mockResolvedValue({ data: { user: { id: "user-1" } } });
+    const justInside = new Date(Date.now() - (ATTENDANCE_WINDOW_HOURS - 1) * 60 * 60 * 1000);
+    maybeSingle.mockResolvedValue({
+      data: { start_time: justInside.toISOString(), venue: null },
+    });
+    upsert.mockResolvedValue({ error: null });
+
+    const result = await confirmAttendance("event-1", null, "venue_qr");
+
+    expect(result).toEqual({ ok: true });
+    expect(upsert).toHaveBeenCalledWith(
+      { user_id: "user-1", event_id: "event-1", method: "venue_qr" },
+      { onConflict: "user_id,event_id", ignoreDuplicates: true }
+    );
+  });
+
+  it("still rejects as too_late for a stale event, same as the gps method", async () => {
+    getUser.mockResolvedValue({ data: { user: { id: "user-1" } } });
+    const longAgo = new Date(Date.now() - (ATTENDANCE_WINDOW_HOURS + 1) * 60 * 60 * 1000);
+    maybeSingle.mockResolvedValue({
+      data: { start_time: longAgo.toISOString(), venue: null },
+    });
+
+    const result = await confirmAttendance("event-1", null, "venue_qr");
+
+    expect(result).toEqual({ ok: false, reason: "too_late" });
+    expect(upsert).not.toHaveBeenCalled();
+  });
+});
