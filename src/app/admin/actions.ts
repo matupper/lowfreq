@@ -73,3 +73,36 @@ export async function rejectVenueClaim(claimId: string) {
   revalidatePath("/admin");
   if (!rejected) redirect("/admin?error=reject_failed");
 }
+
+// Both RPCs are internally admin-gated (see db/migrations/0011_reports.sql)
+// and re-check is_admin themselves, same posture as the event/venue-claim
+// wrappers above.
+export async function resolveReport(reportId: string) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data: resolved } = await supabase.rpc("resolve_report", {
+    target_report_id: reportId,
+  });
+
+  revalidatePath("/admin");
+  if (!resolved) redirect("/admin?error=resolve_failed");
+}
+
+export async function dismissReport(reportId: string) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data: dismissed } = await supabase.rpc("dismiss_report", {
+    target_report_id: reportId,
+  });
+
+  revalidatePath("/admin");
+  if (!dismissed) redirect("/admin?error=dismiss_failed");
+}

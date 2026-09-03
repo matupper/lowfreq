@@ -125,6 +125,21 @@ chrome-devtools-mcp version`) before assuming 1.7.0 is still the right pin —
 a future `chrome-devtools-axi` release may catch up and make this
 unnecessary.
 
+A third failure mode (seen 2026-09-03, Chrome 152.0.7977.42): every
+snapshot-taking command (`open`, `newpage`, `eval`) still fails with
+`Protocol error (Target.setDiscoverTargets): Target closed`, and `pages`
+reports 0 pages open, even with both fixes above applied together (pinned
+mcp 1.7.0 + a manually launched Chrome on a fixed `--remote-debugging-port`
+via `CHROME_DEVTOOLS_AXI_BROWSER_URL`) — this is despite the browser's own
+CDP endpoint answering fine over plain `curl .../json/list`. Not resolved;
+suspected puppeteer-core-in-chrome-devtools-mcp/Chrome CDP-dialect mismatch
+given how new that Chrome build is, but unconfirmed. When this happens,
+don't sink more time re-trying the two documented workarounds above — fall
+back to `npm run build` + a `curl` smoke test of the changed routes against
+a locally running `next dev` (confirms the route renders/redirects without
+a server-side crash, though not real interactivity) and say so explicitly
+rather than claiming full browser verification.
+
 ## Browser-testing signup: real domain required, and email sends are rate-limited
 
 Supabase Auth on `lowfreq-dev` rejects signup with a "Email address is

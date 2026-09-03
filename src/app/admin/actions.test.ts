@@ -29,6 +29,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { approveEvent, rejectEvent } from "./actions";
 import { approveVenueClaim, rejectVenueClaim } from "./actions";
+import { resolveReport, dismissReport } from "./actions";
 
 describe("approveEvent", () => {
   afterEach(() => {
@@ -145,5 +146,57 @@ describe("rejectVenueClaim", () => {
     rpc.mockResolvedValue({ data: true });
 
     await expect(rejectVenueClaim("claim-1")).resolves.toBeUndefined();
+  });
+});
+
+describe("resolveReport", () => {
+  afterEach(() => {
+    rpc.mockReset();
+    getUser.mockReset();
+    vi.mocked(redirect).mockClear();
+    vi.mocked(revalidatePath).mockClear();
+  });
+
+  it("redirects to /admin?error=resolve_failed when the RPC reports failure", async () => {
+    getUser.mockResolvedValue({ data: { user: { id: "admin-1" } } });
+    rpc.mockResolvedValue({ data: false });
+
+    await expect(resolveReport("report-1")).rejects.toThrow(
+      "REDIRECT:/admin?error=resolve_failed"
+    );
+    expect(rpc).toHaveBeenCalledWith("resolve_report", { target_report_id: "report-1" });
+  });
+
+  it("does not redirect on error when the RPC reports success", async () => {
+    getUser.mockResolvedValue({ data: { user: { id: "admin-1" } } });
+    rpc.mockResolvedValue({ data: true });
+
+    await expect(resolveReport("report-1")).resolves.toBeUndefined();
+  });
+});
+
+describe("dismissReport", () => {
+  afterEach(() => {
+    rpc.mockReset();
+    getUser.mockReset();
+    vi.mocked(redirect).mockClear();
+    vi.mocked(revalidatePath).mockClear();
+  });
+
+  it("redirects to /admin?error=dismiss_failed when the RPC reports failure", async () => {
+    getUser.mockResolvedValue({ data: { user: { id: "admin-1" } } });
+    rpc.mockResolvedValue({ data: false });
+
+    await expect(dismissReport("report-1")).rejects.toThrow(
+      "REDIRECT:/admin?error=dismiss_failed"
+    );
+    expect(rpc).toHaveBeenCalledWith("dismiss_report", { target_report_id: "report-1" });
+  });
+
+  it("does not redirect on error when the RPC reports success", async () => {
+    getUser.mockResolvedValue({ data: { user: { id: "admin-1" } } });
+    rpc.mockResolvedValue({ data: true });
+
+    await expect(dismissReport("report-1")).resolves.toBeUndefined();
   });
 });
