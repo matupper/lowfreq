@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { checkProximity, type GeoReading } from "@/lib/location";
-import { ATTENDANCE_WINDOW_HOURS } from "./constants";
+import { ATTENDANCE_WINDOW_HOURS, REPORT_REASONS, type ReportReason } from "./constants";
 
 function isEventId(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
@@ -142,5 +142,59 @@ export async function confirmAttendance(
   }
 
   revalidatePath("/home");
+  return { ok: true };
+}
+
+// Reason categories are fixed (docs/designdoc.md §9 Phase 4 item 6) — the
+// reason column itself is free text, so an optional detail string is
+// folded into it as "<category>: <details>" rather than needing a second
+// column.
+function isReportReason(value: unknown): value is ReportReason {
+  return (REPORT_REASONS as readonly string[]).includes(value as string);
+}
+
+export type FileReportResult =
+  | { ok: true }
+  | { ok: false; reason: "invalid" | "not_found" | "error" };
+
+// reports.target_id has no FK (db/migrations/0011_reports.sql — polymorphic
+// target_type/target_id trades that away for one table instead of
+// event_reports/venue_reports duplicates), so integrity is checked here at
+// insert time instead: confirm the event actually exists before filing
+// against it.
+export async function fileReport(
+  eventId: string,
+  category: ReportReason,
+  details: string
+): Promise<FileReportResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  if (!isEventId(eventId) || !isReportReason(category)) {
+    return { ok: false, reason: "invalid" };
+  }
+
+  const { data: event } = await supabase
+    .from("events")
+    .select("id")
+    .eq("id", eventId)
+    .maybeSingle();
+  if (!event) {
+    return { ok: false, reason: "not_found" };
+  }
+
+  const trimmedDetails = details.trim().slice(0, 500);
+  const reason = trimmedDetails ? `${category}: ${trimmedDetails}` : category;
+
+  const { error } = await supabase
+    .from("reports")
+    .insert({ reporter_id: user.id, target_type: "event", target_id: eventId, reason });
+  if (error) {
+    return { ok: false, reason: "error" };
+  }
+
   return { ok: true };
 }

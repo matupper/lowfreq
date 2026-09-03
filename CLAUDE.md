@@ -182,6 +182,37 @@ involved. Redeeming first (rather than trusting the token) is what makes
 an expired/revoked venue code stop working here too, the same way it does
 for registration.
 
+## Reporting (Phase 4 item 6)
+`reports` (db/migrations/0011_reports.sql) is polymorphic —
+`target_type`/`target_id` cover both `'event'` and `'venue'` with one
+table instead of `event_reports`/`venue_reports` duplicates, trading away
+a real FK for an app-layer existence check at insert time (`fileReport` in
+src/app/events/actions.ts confirms the event exists before inserting).
+Only event reporting has a UI affordance so far — venue reporting has no
+detail/management page yet to hang one on, the same gap Track B's items
+4/5 flagged; the schema already supports `target_type = 'venue'` for
+whenever that page exists. No select policy for regular users, same
+admin-only-read posture as `venue_claims`: `list_open_reports`/
+`resolve_report`/`dismiss_report` (db/schema.sql) is the same RPC-trio
+pattern as the event/venue-claim admin queues, one more section on
+`/admin`. Reason capture is a fixed category (spam/wrong_info/offensive/
+other) folded into the single `reason` text column as `"<category>:
+<details>"` when optional free text is given, plain `"<category>"`
+otherwise — no separate details column.
+
+`EventCard`'s report button/modal (`ReportModal` in
+src/app/events/EventCard.tsx) breaks from this file's usual pattern of
+threading mutations down as props from the page-level Server Component
+(`setGoing`/`setSaved`/`onConfirmAttendance` are all passed in that way,
+ultimately so HomeBrowser can layer optimistic UI over them). Filing a
+report doesn't touch any state EventCard itself renders, so there's
+nothing to lift — `EventCard` imports and calls the `fileReport` Server
+Action directly instead, which Next.js supports natively for a plain
+client-side event handler. `REPORT_REASONS`/`ReportReason` live in
+events/constants.ts, not actions.ts, for the same "`use server` files may
+only export async functions" restriction AGENTS.md notes for
+`ATTENDANCE_WINDOW_HOURS`.
+
 ## Data model notes
 - public.users.id is the SAME id as auth.users.id (Supabase Auth), linked
   via a foreign key + trigger (handle_new_user). Never manually insert
@@ -211,9 +242,11 @@ fields (avatar, handle, bio, music identity — see docs/designdoc.md
 avatar storage) are all built, including the attendance denied-location
 decision (see "Attendance" above). Phase 4 (§9) is fully built: Track A
 — user-submitted events, the admin review queue (`/admin`, no BottomNav
-entry), and custom event poster upload (§4.12/§4.12a) — and Track B —
-admin/venue claiming and venue check-in QR (see "Admin & venue
-claiming/check-in" above). For what's next, see docs/designdoc.md §9.
+entry), and custom event poster upload (§4.12/§4.12a) — Track B — admin/
+venue claiming and venue check-in QR (see "Admin & venue claiming/
+check-in" above) — and item 6, basic event reporting (see "Reporting"
+above). Phase 4's checklist is complete; for what's next, see
+docs/designdoc.md §9.
 
 Signed-in sessions persist across browser restarts (~90 days) via a
 `maxAge` override on the Supabase session cookie — see
