@@ -237,9 +237,10 @@ export default function EventMap({
       // down from the container's true center, moving the pin (and the
       // popup above it) down without touching `center`/zoom math. Checked
       // against short/medium/tall EventCard content against the map's
-      // 420px height (className below) with maplibre-gl directly — clears
-      // the popup with room to spare without pushing the pin off the
-      // bottom edge.
+      // former fixed 420px height with maplibre-gl directly — clears the
+      // popup with room to spare without pushing the pin off the bottom
+      // edge; the container (MAP_AREA_CLASSNAME below) is only taller than
+      // that now, so this only has more headroom, never less.
       offset: [0, PIN_FOCUS_OFFSET_Y],
     });
     // Syncing local popup state to an external nav request (the list
@@ -318,8 +319,8 @@ export default function EventMap({
   ]);
 
   return (
-    <div className="lowfreq-map flex flex-col gap-3">
-      <p className="font-mono text-[11px] text-kraft">tap a pin for details</p>
+    <div className="lowfreq-map flex flex-col gap-3 flex-1 min-h-0">
+      <p className="font-mono text-[11px] text-kraft shrink-0">tap a pin for details</p>
       {events.length === 0 ? (
         <MapEmptyState />
       ) : (
@@ -327,16 +328,27 @@ export default function EventMap({
           ref={containerRef}
           role="region"
           aria-label="map of nearby shows"
-          className="relative h-[420px] bg-surface border border-line rounded-[2px] overflow-hidden"
+          className={MAP_AREA_CLASSNAME}
         />
       )}
     </div>
   );
 }
 
+// Mobile: flex-fills whatever height remains in the /home column above the
+// fixed BottomNav (main's pt-10/gap-8 header and pb-28 nav clearance sit
+// outside this element, so flex-1 already nets out to "most of the
+// screen" — see CLAUDE.md's "Event map" section). Desktop/wide viewports
+// override back to a fixed, comfortably-sized box instead of stretching to
+// the full viewport height inside the narrow max-w-md column.
+const MAP_AREA_CLASSNAME =
+  "relative flex-1 min-h-[280px] md:flex-none md:h-[560px] bg-surface border border-line rounded-[2px] overflow-hidden";
+
 function MapEmptyState() {
   return (
-    <div className="h-[420px] bg-surface border border-line rounded-[2px] flex flex-col items-center justify-center text-center px-8 gap-2">
+    <div
+      className={`${MAP_AREA_CLASSNAME} flex flex-col items-center justify-center text-center px-8 gap-2`}
+    >
       <p className="font-display text-2xl tracking-wide">NOTHING NEARBY YET</p>
       <p className="font-mono text-[11px] text-kraft leading-relaxed max-w-[28ch]">
         lowfreq is invite-only and still small — an empty map means the

@@ -103,6 +103,19 @@ error, style/sprite/tiles.json all fetch fine). `scripts/copy-maplibre-worker.js
 note for why this class of bug (works in source, breaks at runtime) needs
 a real browser to catch, not just tests/lint/build.
 
+The map fills most of the mobile screen rather than sitting in a small
+fixed-height box: `EventMap`'s root/map-area/empty-state elements are
+`flex-1 min-h-0` (capped back to a fixed `md:h-[560px]` on desktop/wide
+viewports — see `MAP_AREA_CLASSNAME`), which only works because
+`HomeBrowser`'s `<main>` and the `display: contents` wrapper around
+`EventMap` in map view are already `flex`/`flex-1` too — the map's height
+is "whatever's left" in that flex chain after the TONIGHT header above and
+`<main>`'s `pb-28` (clearing the fixed BottomNav) below, not a hand-tuned
+pixel calc(). If you change HomeBrowser's header markup or the map/list
+view-switching wrapper, re-check that this chain still reaches down to
+EventMap's root — breaking any link makes the map collapse back to a tiny
+box with no visible error.
+
 ## Landing page & bottom nav
 `/home` (src/app/home/page.tsx + HomeBrowser.tsx) *is* the Browse Shows
 view — not a "you're in" welcome screen with a link into browsing. It
