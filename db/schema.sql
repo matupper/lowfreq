@@ -11,6 +11,7 @@
 drop trigger if exists on_auth_user_created on auth.users;
 drop function if exists public.handle_new_user();
 
+drop table if exists reports cascade;
 drop table if exists user_profiles cascade;
 drop table if exists venue_claims cascade;
 drop table if exists attendance cascade;
@@ -40,13 +41,10 @@ create table users (
   invited_by uuid,
   -- Bootstrapped by hand against the live project (no self-service "grant
   -- admin" UI, deliberately) — gates the admin-review RPCs in
-  -- db/migrations/0006_venue_claims.sql and the /admin route.
+  -- db/migrations/0006_venue_claims.sql / 0007_admin_review.sql and the
+  -- /admin route.
   is_admin boolean not null default false,
   created_at timestamptz not null default now(),
-  -- No self-service grant-admin path — bootstrapped by a one-off UPDATE
-  -- against the live project (service-role/dashboard). See
-  -- db/migrations/0007_admin_review.sql.
-  is_admin boolean not null default false,
   constraint users_handle_format check (handle is null or handle ~ '^[A-Za-z0-9_]{3,20}$')
 );
 
@@ -182,6 +180,24 @@ create table venue_claims (
   reviewed_at timestamptz
 );
 
+-- Basic reporting (docs/designdoc.md §9 Phase 4 item 6). Polymorphic
+-- target_type/target_id trades a real FK for one table instead of
+-- event_reports/venue_reports duplicates — integrity is an app-layer check
+-- at insert time (see fileReport in src/app/events/actions.ts). Only event
+-- reporting has a UI affordance so far; venue reporting has no detail page
+-- to hang one on yet (same gap as items 4/5), but the schema already
+-- supports target_type = 'venue'. See db/migrations/0011_reports.sql.
+create table reports (
+  id uuid primary key default gen_random_uuid(),
+  reporter_id uuid references users(id) not null,
+  target_type text not null check (target_type in ('event', 'venue')),
+  target_id uuid not null,
+  reason text,
+  status text not null default 'open' check (status in ('open', 'resolved', 'dismissed')),
+  created_at timestamptz not null default now(),
+  reviewed_at timestamptz
+);
+
 -- ── Indexes ──────────────────────────────────────────────────
 create index events_start_time_idx on events (start_time);
 create index rsvps_event_id_idx on rsvps (event_id);
@@ -218,6 +234,7 @@ alter table rsvps enable row level security;
 alter table attendance enable row level security;
 alter table user_profiles enable row level security;
 alter table venue_claims enable row level security;
+alter table reports enable row level security;
 
 create policy "users can view own row" on users for select using (auth.uid() = id);
 -- A pending/rejected submission is only visible to its own host — everyone
@@ -263,6 +280,9 @@ create policy "users can create their own invites" on invites for insert with ch
 create policy "users can view their own invites" on invites for select using (auth.uid() = created_by);
 create policy "users can submit their own claims" on venue_claims for insert with check (auth.uid() = claimant_id);
 create policy "users can view their own claims" on venue_claims for select using (auth.uid() = claimant_id);
+-- No select policy for regular users — reports aren't readable by anyone
+-- but admins, via list_open_reports/resolve_report/dismiss_report below.
+create policy "users can file reports" on reports for insert with check (auth.uid() = reporter_id);
 create policy "users can view their own rsvps" on rsvps for select using (auth.uid() = user_id);
 create policy "users can create their own rsvps" on rsvps for insert with check (auth.uid() = user_id);
 -- Needed so a user can toggle going/saved independently (an upsert on the
@@ -811,6 +831,87 @@ end;
 $$;
 
 grant execute on function public.reject_event(uuid) to authenticated;
+
+-- ── Reports (Phase 4 item 6) ───────────────────────────────────
+-- Same admin-only-read posture and RPC-trio shape as the venue claims /
+-- event review queues above — reports has no select policy for regular
+-- users, so admin access goes entirely through these three functions.
+create or replace function public.list_open_reports()
+returns table (
+  report_id uuid,
+  target_type text,
+  target_id uuid,
+  target_label text,
+  reporter_id uuid,
+  reporter_name text,
+  reason text,
+  created_at timestamptz
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select
+    r.id,
+    r.target_type,
+    r.target_id,
+    case r.target_type
+      when 'event' then (select e.title from events e where e.id = r.target_id)
+      when 'venue' then (select v.name from venues v where v.id = r.target_id)
+    end,
+    r.reporter_id,
+    u.name,
+    r.reason,
+    r.created_at
+  from reports r
+  join users u on u.id = r.reporter_id
+  where r.status = 'open'
+    and exists (select 1 from users a where a.id = auth.uid() and a.is_admin)
+  order by r.created_at asc;
+$$;
+
+grant execute on function public.list_open_reports() to authenticated;
+
+create or replace function public.resolve_report(target_report_id uuid)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  updated_id uuid;
+begin
+  update reports set status = 'resolved', reviewed_at = now()
+  where id = target_report_id and status = 'open'
+    and exists (select 1 from users a where a.id = auth.uid() and a.is_admin)
+  returning id into updated_id;
+
+  return updated_id is not null;
+end;
+$$;
+
+grant execute on function public.resolve_report(uuid) to authenticated;
+
+create or replace function public.dismiss_report(target_report_id uuid)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  updated_id uuid;
+begin
+  update reports set status = 'dismissed', reviewed_at = now()
+  where id = target_report_id and status = 'open'
+    and exists (select 1 from users a where a.id = auth.uid() and a.is_admin)
+  returning id into updated_id;
+
+  return updated_id is not null;
+end;
+$$;
+
+grant execute on function public.dismiss_report(uuid) to authenticated;
 
 -- ── Avatar storage ───────────────────────────────────────────
 -- Public bucket (avatars are meant to be displayed everywhere a user

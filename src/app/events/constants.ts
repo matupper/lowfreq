@@ -7,3 +7,9 @@
 // Lives outside actions.ts because "use server" files may only export async
 // functions — a plain constant export breaks the Next.js build.
 export const ATTENDANCE_WINDOW_HOURS = 6;
+
+// Fixed reason categories for reporting (docs/designdoc.md §9 Phase 4 item
+// 6). Also outside actions.ts for the same "use server" export restriction
+// as above.
+export const REPORT_REASONS = ["spam", "wrong_info", "offensive", "other"] as const;
+export type ReportReason = (typeof REPORT_REASONS)[number];

@@ -1,7 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import EventCard from "./EventCard";
 import type { EventWithVenue } from "./types";
+
+const { fileReport } = vi.hoisted(() => ({ fileReport: vi.fn() }));
+
+vi.mock("./actions", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./actions")>();
+  return { ...actual, fileReport };
+});
 
 function makeEvent(overrides: Partial<EventWithVenue> = {}): EventWithVenue {
   return {
@@ -56,5 +63,55 @@ describe("EventCard poster slot", () => {
     const thumbnail = container.querySelector("[style*='background-image']");
     expect(thumbnail).not.toBeNull();
     expect(thumbnail?.getAttribute("style")).toContain(posterUrl);
+  });
+});
+
+describe("EventCard report affordance", () => {
+  afterEach(() => {
+    cleanup();
+    fileReport.mockReset();
+  });
+
+  it("files a report with the selected category and optional details, then shows a thanks message", async () => {
+    fileReport.mockResolvedValue({ ok: true });
+    render(
+      <EventCard
+        event={makeEvent()}
+        setGoing={vi.fn()}
+        setSaved={vi.fn()}
+        attendanceResult={undefined}
+        onConfirmAttendance={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("report"));
+    fireEvent.click(screen.getByLabelText("Offensive"));
+    fireEvent.change(screen.getByPlaceholderText(/optional/i), {
+      target: { value: "gross flyer art" },
+    });
+    fireEvent.click(screen.getByText("submit"));
+
+    await waitFor(() =>
+      expect(fileReport).toHaveBeenCalledWith("event-1", "offensive", "gross flyer art")
+    );
+    await screen.findByText(/sent to the mods/i);
+  });
+
+  it("shows an error message and leaves the modal open when filing fails", async () => {
+    fileReport.mockResolvedValue({ ok: false, reason: "error" });
+    render(
+      <EventCard
+        event={makeEvent()}
+        setGoing={vi.fn()}
+        setSaved={vi.fn()}
+        attendanceResult={undefined}
+        onConfirmAttendance={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("report"));
+    fireEvent.click(screen.getByText("submit"));
+
+    await screen.findByText(/couldn.t send that/i);
   });
 });

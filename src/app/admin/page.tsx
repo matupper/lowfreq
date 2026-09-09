@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { approveEvent, rejectEvent } from "./actions";
 import { approveVenueClaim, rejectVenueClaim } from "./actions";
+import { resolveReport, dismissReport } from "./actions";
 
 type PendingEventRow = {
   event_id: string;
@@ -33,10 +34,23 @@ const dateFormatter = new Intl.DateTimeFormat("en-US", {
   minute: "2-digit",
 });
 
+type ReportRow = {
+  report_id: string;
+  target_type: "event" | "venue";
+  target_id: string;
+  target_label: string | null;
+  reporter_id: string;
+  reporter_name: string;
+  reason: string | null;
+  created_at: string;
+};
+
 const CLAIM_ERROR_COPY: Record<string, string> = {
   approve_failed:
     "Couldn't approve — the venue was already claimed by someone else.",
   reject_failed: "Couldn't reject — that claim was already handled.",
+  resolve_failed: "Couldn't resolve — that report was already handled.",
+  dismiss_failed: "Couldn't dismiss — that report was already handled.",
 };
 
 // Plain table, not a designed screen (per docs/designdoc.md §4.12a) — this
@@ -67,6 +81,9 @@ export default async function AdminPage({
 
   const { data: claims } = await supabase.rpc("list_pending_venue_claims");
   const claimRows = (claims ?? []) as VenueClaimRow[];
+
+  const { data: reports } = await supabase.rpc("list_open_reports");
+  const reportRows = (reports ?? []) as ReportRow[];
 
   const params = await searchParams;
   const rawError = typeof params?.error === "string" ? params.error : "";
@@ -165,7 +182,65 @@ export default async function AdminPage({
           </div>
         )}
       </section>
+
+      <section className="space-y-3">
+        <h2 className="font-mono text-[11px] text-kraft uppercase tracking-wide">
+          open reports ({reportRows.length})
+        </h2>
+        {reportRows.length === 0 ? (
+          <p className="text-sm text-kraft">Nothing reported.</p>
+        ) : (
+          <div className="flex flex-col divide-y divide-line border border-line rounded-[2px]">
+            {reportRows.map((report) => (
+              <ReportRowItem key={report.report_id} report={report} />
+            ))}
+          </div>
+        )}
+      </section>
     </main>
+  );
+}
+
+function ReportRowItem({ report }: { report: ReportRow }) {
+  return (
+    <div className="flex flex-col gap-2 px-4 py-3 text-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 space-y-0.5">
+          <p className="font-medium truncate">
+            {report.target_label ?? "(deleted)"}{" "}
+            <span className="text-kraft font-normal">· {report.target_type}</span>
+          </p>
+          <p className="font-mono text-[11px] text-kraft">
+            reported by {report.reporter_name}
+          </p>
+          {report.reason && (
+            <p className="text-xs text-kraft italic pt-1">&ldquo;{report.reason}&rdquo;</p>
+          )}
+        </div>
+        <span className="font-mono text-[11px] text-kraft shrink-0">
+          {dateFormatter.format(new Date(report.created_at))}
+        </span>
+      </div>
+
+      <div className="flex gap-2 pt-1">
+        <form action={resolveReport.bind(null, report.report_id)}>
+          <button
+            type="submit"
+            className="font-mono text-[11px] text-riso-pink border border-riso-pink rounded-full px-3 py-1"
+          >
+            resolve
+          </button>
+        </form>
+        <form action={dismissReport.bind(null, report.report_id)}>
+          <button
+            type="submit"
+            className="font-mono text-[11px] text-kraft border border-line rounded-full px-3 py-1"
+          >
+            dismiss
+          </button>
+        </form>
+      </div>
+    </div>
   );
 }
 

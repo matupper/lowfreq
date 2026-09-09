@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 // action's date-window logic end to end (not just the UI's message map).
 const maybeSingle = vi.fn();
 const upsert = vi.fn();
+const insert = vi.fn();
 const getUser = vi.fn();
 
 vi.mock("@/lib/supabase/server", () => ({
@@ -17,6 +18,7 @@ vi.mock("@/lib/supabase/server", () => ({
         eq: () => ({ maybeSingle }),
       }),
       upsert,
+      insert,
     }),
   }),
 }));
@@ -31,7 +33,7 @@ vi.mock("next/cache", () => ({
   revalidatePath: vi.fn(),
 }));
 
-import { confirmAttendance } from "./actions";
+import { confirmAttendance, fileReport } from "./actions";
 import { ATTENDANCE_WINDOW_HOURS } from "./constants";
 
 const reading = { lat: 34.0537, lng: -118.2428, accuracy: 5, timestamp: Date.now() };
@@ -110,5 +112,65 @@ describe("confirmAttendance venue_qr method", () => {
 
     expect(result).toEqual({ ok: false, reason: "too_late" });
     expect(upsert).not.toHaveBeenCalled();
+  });
+});
+
+// reports.target_id has no FK (db/migrations/0011_reports.sql) — integrity
+// is an app-layer check at insert time, so fileReport confirms the event
+// actually exists before ever attempting the insert.
+describe("fileReport", () => {
+  afterEach(() => {
+    maybeSingle.mockReset();
+    insert.mockReset();
+    getUser.mockReset();
+  });
+
+  it("rejects an unrecognized reason category without touching the database", async () => {
+    getUser.mockResolvedValue({ data: { user: { id: "user-1" } } });
+
+    // @ts-expect-error deliberately passing an invalid category
+    const result = await fileReport("event-1", "made_up_category", "");
+
+    expect(result).toEqual({ ok: false, reason: "invalid" });
+    expect(maybeSingle).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("returns not_found instead of inserting when the target event doesn't exist", async () => {
+    getUser.mockResolvedValue({ data: { user: { id: "user-1" } } });
+    maybeSingle.mockResolvedValue({ data: null });
+
+    const result = await fileReport("event-1", "spam", "");
+
+    expect(result).toEqual({ ok: false, reason: "not_found" });
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("folds optional free text into the reason column alongside the category", async () => {
+    getUser.mockResolvedValue({ data: { user: { id: "user-1" } } });
+    maybeSingle.mockResolvedValue({ data: { id: "event-1" } });
+    insert.mockResolvedValue({ error: null });
+
+    const result = await fileReport("event-1", "offensive", "  gross flyer art  ");
+
+    expect(result).toEqual({ ok: true });
+    expect(insert).toHaveBeenCalledWith({
+      reporter_id: "user-1",
+      target_type: "event",
+      target_id: "event-1",
+      reason: "offensive: gross flyer art",
+    });
+  });
+
+  it("stores just the category when no free text is given", async () => {
+    getUser.mockResolvedValue({ data: { user: { id: "user-1" } } });
+    maybeSingle.mockResolvedValue({ data: { id: "event-1" } });
+    insert.mockResolvedValue({ error: null });
+
+    await fileReport("event-1", "spam", "");
+
+    expect(insert).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: "spam" })
+    );
   });
 });

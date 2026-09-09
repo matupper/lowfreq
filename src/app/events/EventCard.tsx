@@ -1,7 +1,110 @@
 "use client";
 
+import { useState } from "react";
 import type { EventWithVenue } from "./types";
-import type { ConfirmAttendanceResult } from "./actions";
+import { fileReport, type ConfirmAttendanceResult } from "./actions";
+import { REPORT_REASONS, type ReportReason } from "./constants";
+
+const REPORT_REASON_LABELS: Record<ReportReason, string> = {
+  spam: "Spam",
+  wrong_info: "Wrong info",
+  offensive: "Offensive",
+  other: "Other",
+};
+
+function ReportModal({
+  eventId,
+  onClose,
+}: {
+  eventId: string;
+  onClose: () => void;
+}) {
+  const [category, setCategory] = useState<ReportReason>(REPORT_REASONS[0]);
+  const [details, setDetails] = useState("");
+  const [status, setStatus] = useState<"idle" | "pending" | "sent" | "error">("idle");
+
+  async function handleSubmit() {
+    setStatus("pending");
+    const result = await fileReport(eventId, category, details);
+    setStatus(result.ok ? "sent" : "error");
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-ink/40 px-4 pb-4 sm:pb-0"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-sm bg-surface border border-ink rounded-[2px] p-5"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {status === "sent" ? (
+          <>
+            <p className="text-sm">Thanks — this has been sent to the mods.</p>
+            <button
+              type="button"
+              onClick={onClose}
+              className="font-mono text-[11px] uppercase tracking-wide rounded-full px-3 py-1.5 border border-line text-kraft hover:border-kraft transition-colors mt-4"
+            >
+              close
+            </button>
+          </>
+        ) : (
+          <>
+            <h3 className="font-mono text-[11px] text-kraft uppercase tracking-wide">
+              report this show
+            </h3>
+            <fieldset className="flex flex-col gap-2 mt-3">
+              <legend className="sr-only">Reason</legend>
+              {REPORT_REASONS.map((reason) => (
+                <label key={reason} className="flex items-center gap-2 text-sm">
+                  <input
+                    type="radio"
+                    name="report-reason"
+                    value={reason}
+                    checked={category === reason}
+                    onChange={() => setCategory(reason)}
+                    className="accent-riso-pink"
+                  />
+                  {REPORT_REASON_LABELS[reason]}
+                </label>
+              ))}
+            </fieldset>
+            <textarea
+              value={details}
+              onChange={(e) => setDetails(e.target.value)}
+              placeholder="Anything else? (optional)"
+              rows={3}
+              className="w-full mt-3 bg-surface-2 border border-line rounded-[2px] px-3 py-2 text-sm text-ink placeholder:text-kraft resize-none"
+            />
+            {status === "error" && (
+              <p className="font-mono text-[11px] text-stamp-red mt-2">
+                couldn&rsquo;t send that — try again.
+              </p>
+            )}
+            <div className="border-t border-dashed border-line mt-4 pt-4 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleSubmit}
+                disabled={status === "pending"}
+                className="font-mono text-[11px] uppercase tracking-wide rounded-full px-3 py-1.5 border border-riso-pink text-riso-pink hover:bg-riso-pink/10 transition-colors disabled:opacity-60"
+              >
+                {status === "pending" ? "sending…" : "submit"}
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="font-mono text-[11px] uppercase tracking-wide rounded-full px-3 py-1.5 border border-line text-kraft hover:border-kraft transition-colors"
+              >
+                cancel
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function AttendanceMessage({ result }: { result: ConfirmAttendanceResult }) {
   if (result.ok) return null;
@@ -47,6 +150,7 @@ export default function EventCard({
   onViewInList?: (eventId: string) => void;
 }) {
   const attended = event.attendedAt !== null || attendanceResult === "confirmed";
+  const [reportOpen, setReportOpen] = useState(false);
 
   return (
     <div
@@ -120,6 +224,13 @@ export default function EventCard({
         >
           save
         </button>
+        <button
+          type="button"
+          onClick={() => setReportOpen(true)}
+          className="font-mono text-[11px] uppercase tracking-wide text-kraft hover:text-ink transition-colors underline underline-offset-2 decoration-dotted"
+        >
+          report
+        </button>
         {onViewOnMap && (
           <button
             type="button"
@@ -142,6 +253,10 @@ export default function EventCard({
 
       {attendanceResult && attendanceResult !== "pending" && attendanceResult !== "confirmed" && (
         <AttendanceMessage result={attendanceResult} />
+      )}
+
+      {reportOpen && (
+        <ReportModal eventId={event.id} onClose={() => setReportOpen(false)} />
       )}
     </div>
   );
