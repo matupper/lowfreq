@@ -45,14 +45,14 @@ describe("EventCard poster slot", () => {
       />,
     );
 
-    expect(container.querySelector("[style*='background-image']")).toBeNull();
+    expect(container.querySelector("img")).toBeNull();
   });
 
-  it("renders the poster as the card's header/thumbnail when posterUrl is present", () => {
+  it("renders the poster at its natural aspect ratio (no crop/letterbox) when posterUrl is present", () => {
     const posterUrl = "https://example.com/posters/event-1/poster.jpg?v=123";
-    const { container } = render(
+    render(
       <EventCard
-        event={makeEvent({ posterUrl })}
+        event={makeEvent({ posterUrl, title: "Basement Show" })}
         setGoing={vi.fn()}
         setSaved={vi.fn()}
         attendanceResult={undefined}
@@ -60,9 +60,13 @@ describe("EventCard poster slot", () => {
       />,
     );
 
-    const thumbnail = container.querySelector("[style*='background-image']");
-    expect(thumbnail).not.toBeNull();
-    expect(thumbnail?.getAttribute("style")).toContain(posterUrl);
+    const thumbnail = screen.getByAltText("Basement Show poster");
+    expect(thumbnail.tagName).toBe("IMG");
+    expect(thumbnail.getAttribute("src")).toBe(posterUrl);
+    // Natural-aspect-ratio container: no fixed aspect-ratio/cover class and
+    // no background-image styling that would crop or letterbox the image.
+    expect(thumbnail.className).not.toMatch(/aspect-|object-cover|bg-cover/);
+    expect(thumbnail.getAttribute("style")).toBeNull();
   });
 });
 

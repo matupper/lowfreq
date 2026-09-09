@@ -159,9 +159,14 @@ export default function EventCard({
       }`}
     >
       {event.posterUrl && (
-        <div
-          className="-mx-5 -mt-5 mb-4 aspect-[4/3] bg-surface-2 bg-cover bg-center rounded-t-[1px]"
-          style={{ backgroundImage: `url(${event.posterUrl})` }}
+        // Captain decision (poster-fit-decision): natural aspect ratio, no
+        // crop/letterbox/cap — the container is sized to the image itself
+        // rather than forced into a fixed box.
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={event.posterUrl}
+          alt={`${event.title} poster`}
+          className="block -mx-5 -mt-5 mb-4 w-[calc(100%+2.5rem)] max-w-none h-auto rounded-t-[1px]"
         />
       )}
       <h2 className="font-display text-2xl leading-tight tracking-wide">
