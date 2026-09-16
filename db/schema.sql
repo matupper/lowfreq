@@ -44,6 +44,11 @@ create table users (
   -- db/migrations/0006_venue_claims.sql / 0007_admin_review.sql and the
   -- /admin route.
   is_admin boolean not null default false,
+  -- Bootstrapped by hand against the live project (no self-service grant
+  -- path, same as is_admin) — marks an account as one of the app's
+  -- original/founding members, purely identity/badge — carries no extra
+  -- permissions the way is_admin does.
+  is_founder boolean not null default false,
   created_at timestamptz not null default now(),
   constraint users_handle_format check (handle is null or handle ~ '^[A-Za-z0-9_]{3,20}$')
 );
