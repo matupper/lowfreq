@@ -512,6 +512,70 @@ $$;
 
 grant execute on function public.redeem_invite(text) to authenticated, anon;
 
+-- OAuth sign-in (Google/Apple via signInWithOAuth/signInWithIdToken, see
+-- db/migrations/0012_activate_invited_user.sql) creates a real auth.users
+-- row on first sign-in with no invite token in the flow, so
+-- handle_new_user() inserts the matching public.users row with
+-- invited_by = null. This is the after-the-fact counterpart to
+-- redeem_invite (which the existing signUp path calls *before* the users
+-- row exists, via signUp metadata) — it requires a session (auth.uid() not
+-- null) and refuses if the caller's users row already has invited_by set,
+-- so a real invited account can never call this to change its lineage.
+-- Delegates the actual token validation/consumption to redeem_invite
+-- itself (reusable vs. single-use) rather than duplicating that branch —
+-- calling one security definer function from another runs with the
+-- definer's privileges, so no extra grant on invites is needed here.
+create or replace function public.activate_invited_user(invite_token text)
+returns table (invite_id uuid, created_by uuid, lat double precision, lng double precision)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  caller_id uuid := auth.uid();
+  already_invited boolean;
+  redeemed_invite_id uuid;
+  redeemed_created_by uuid;
+  redeemed_lat double precision;
+  redeemed_lng double precision;
+  updated_id uuid;
+begin
+  if caller_id is null then
+    return;
+  end if;
+
+  select (invited_by is not null) into already_invited
+  from users where id = caller_id;
+
+  if already_invited is not false then
+    -- covers both "already invited" and "no users row for this caller",
+    -- neither of which should redeem an invite here.
+    return;
+  end if;
+
+  select r.invite_id, r.created_by, r.lat, r.lng
+    into redeemed_invite_id, redeemed_created_by, redeemed_lat, redeemed_lng
+    from redeem_invite(invite_token) r;
+
+  if redeemed_invite_id is null then
+    return;
+  end if;
+
+  update users
+  set invited_by = redeemed_invite_id
+  where id = caller_id and invited_by is null
+  returning id into updated_id;
+
+  if updated_id is null then
+    return;
+  end if;
+
+  return query select redeemed_invite_id, redeemed_created_by, redeemed_lat, redeemed_lng;
+end;
+$$;
+
+grant execute on function public.activate_invited_user(text) to authenticated;
+
 -- Peek-only, mirrors invite_location's contract: lets /checkin/[token]
 -- (both the no-session registration branch and the session-present
 -- attendance branch) learn which event/venue a scanned code belongs to,

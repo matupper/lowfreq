@@ -44,6 +44,19 @@ both directions: your inviter as a highlighted "invited by" card, and
 everyone you've invited as a friends-list-style section below it
 (src/app/profile/InviteFriends.tsx).
 
+Google/Apple sign-in (`signInWithOAuth`/`signInWithIdToken`) creates the
+`auth.users`/`public.users` row (via `handle_new_user`) with no invite
+token in the loop at all, unlike email/password signup where
+`redeem_invite` runs *before* `auth.signUp`. `activate_invited_user`
+(db/schema.sql, db/migrations/0012_activate_invited_user.sql) is the
+after-the-fact counterpart: called post-auth with a scanned invite token,
+it requires a session, refuses if the caller's `users` row already has
+`invited_by` set (so a real invited account can't call it to change its
+lineage), delegates the actual token validation/consumption to
+`redeem_invite` internally, then sets `invited_by`. No UI wired to it yet
+— whoever builds the "attach an invite" screen for OAuth users calls this
+RPC rather than re-deriving the redeem logic.
+
 Location-verified tokens (docs/designdoc.md §9 Phase 3) are built:
 `invites.lat`/`lng` capture the inviter's device position at generation
 time (best-effort — a missing location doesn't block generation), and
